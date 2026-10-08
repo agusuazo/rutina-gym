@@ -1,6 +1,6 @@
 /* Service worker: cachea la app para que funcione offline.
    Estrategia: red primero, caché de respaldo. Sube CACHE al cambiar archivos. */
-const CACHE = 'rutina-v4';
+const CACHE = 'rutina-v5';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './guides.js', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon.svg'

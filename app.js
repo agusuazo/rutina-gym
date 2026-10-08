@@ -61,11 +61,16 @@
   const EX = {};
   [ROUTINES.A, ROUTINES.B].forEach((r) => r.exercises.forEach((e) => { EX[e.id] = e; }));
 
-  const defaultSettings = () => ({ time: '20:00', notify: false, rest: 75, path: true });
+  const defaultSettings = () => ({ time: '20:00', notify: false, rest: 75, path: true, anchor: '' });
   function defaultState(today) {
-    return { v: 1, startDate: today, sessions: {}, freezes: {}, draft: null, settings: defaultSettings(), lastNotified: null };
+    return { v: 1, startDate: today, sessions: {}, freezes: {}, draft: null, settings: defaultSettings(), lastNotified: null,
+      body: {}, lastBackup: null, onboarded: false };
   }
-  /** sessions[k] = { type:'A'|'B', minimal:bool, ex:{id:[reps|null,...]} } ; freezes[k] = true */
+  /** sessions[k] = { type, minimal:bool, ex:{id:[reps|null,...]}, lesson?, partial? } ; freezes[k] = true
+      type: 'A' | 'B' (rutina) · 'P' (lección del trayecto) · 'W' (descanso activo: caminata)
+            · 'R' (entrenamiento registrado después, sin detalle).
+      Todas cuentan para la racha; la caminata ('W') no cuenta para la meta semanal.
+      body[k] = { kg, cm } (peso y cintura). */
 
   /* ------------------------------- Racha ------------------------------- */
   const covered = (st, k) => !!(st.sessions[k] || st.freezes[k]);
@@ -139,12 +144,13 @@
     let sessions = 0, reps = 0;
     for (let i = 0; i < 7; i++) {
       const s = st.sessions[addDays(ws, i)];
-      if (s) { sessions++; reps += sessionReps(s); }
+      if (s && isTraining(s)) { sessions++; reps += sessionReps(s); }
     }
     return { sessions, reps };
   }
-  /** A/B alterna según sesiones completas (el modo mínimo no avanza la rotación). */
-  const nextType = (st) => (Object.values(st.sessions).filter((s) => !s.minimal).length % 2 === 0 ? 'A' : 'B');
+  const isTraining = (s) => s.type !== 'W';
+  /** A/B alterna según las sesiones A/B completas (mínimo, lecciones, caminatas y registros no la avanzan). */
+  const nextType = (st) => (Object.values(st.sessions).filter((s) => (s.type === 'A' || s.type === 'B') && !s.minimal).length % 2 === 0 ? 'A' : 'B');
 
   /** Repeticiones de la última sesión completa que incluyó el ejercicio. */
   function lastReps(st, id) {
@@ -243,12 +249,93 @@
   /** Rutina ({title, exercises}) para {minimal, type, lesson}. */
   const routineFor = (o) => (o.minimal ? MINIMAL : o.lesson ? LESSON_BY_ID[o.lesson] : ROUTINES[o.type]);
 
+  /* ----------------------- Recomendación del día ----------------------- */
+  /** 'done' | 'train' | 'rest'. Reparte la meta semanal (2-3 sesiones) dejando días de descanso
+      activo entre medio: si ayer entrenaste y aún llegas a la meta entrenando día por medio
+      desde mañana, hoy toca caminar. Si ya cumpliste la meta, también. */
+  function dayAdvice(st, today) {
+    if (st.sessions[today]) return 'done';
+    const ws = weekStart(today), need = weekGoal(st, ws) - weekStats(st, ws).sessions;
+    if (need <= 0) return 'rest';
+    const y = st.sessions[addDays(today, -1)];
+    const trainedYesterday = !!y && isTraining(y) && !y.minimal;
+    const daysAfterToday = 6 - dowMon0(today);
+    return trainedYesterday && need <= Math.ceil(daysAfterToday / 2) ? 'rest' : 'train';
+  }
+
+  /* ------------------------- Semanas perfectas ------------------------- */
+  const weekMet = (st, ws) => weekStats(st, ws).sessions >= weekGoal(st, ws);
+  /** Semanas seguidas cumpliendo la meta. La semana en curso suma si ya se cumplió, y no corta si aún no. */
+  function perfectWeeks(st, today) {
+    const first = weekStart(firstDay(st));
+    let ws = weekStart(today), n = weekMet(st, ws) ? 1 : 0;
+    for (ws = addDays(ws, -7); ws >= first && weekMet(st, ws); ws = addDays(ws, -7)) n++;
+    return n;
+  }
+  function bestPerfectWeeks(st, today) {
+    const cur = weekStart(today);
+    let best = 0, run = 0;
+    for (let ws = weekStart(firstDay(st)); ws <= cur; ws = addDays(ws, 7)) {
+      if (weekMet(st, ws)) best = Math.max(best, ++run);
+      else if (ws < cur) run = 0;
+    }
+    return best;
+  }
+
+  /* ------------------------------ Logros ------------------------------ */
+  // Se calculan desde el historial (no se guardan) y solo usan medidas que nunca bajan,
+  // así un logro no se "pierde" si se rompe la racha.
+  function achievementCtx(st, today) {
+    const entries = Object.entries(st.sessions).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    const full = entries.filter(([, s]) => isTraining(s) && !s.minimal);
+    const maxReps = (id) => full.reduce((m, [, s]) => Math.max(m, ...((s.ex && s.ex[id]) || []).filter((n) => typeof n === 'number')), 0);
+    const first = entries.length ? entries[0][0] : null;
+    return {
+      best: bestStreak(st), training: entries.filter(([, s]) => isTraining(s)).length,
+      minimal: entries.filter(([, s]) => s.minimal).length, walks: entries.filter(([, s]) => s.type === 'W').length,
+      lessons: completedLessons(st), reps: entries.reduce((a, [, s]) => a + sessionReps(s), 0),
+      freezes: Object.keys(st.freezes).length, pushups: maxReps('flexiones'), rows: maxReps('remo-inv'),
+      weeks: bestPerfectWeeks(st, today),
+      comeback: entries.some(([k]) => { const p = addDays(k, -1); return p > first && !covered(st, p); })
+    };
+  }
+  const bossOf = (n) => UNITS[n - 1].lessons[UNITS[n - 1].lessons.length - 1].id;
+  const ACHIEVEMENTS = [
+    ['primera', '🌱', 'Primer paso', 'Tu primera sesión de entrenamiento', (c) => c.training >= 1],
+    ['minimo', '⚡', 'Mínimo pero cuenta', 'Usaste el modo mínimo para no romper la cadena', (c) => c.minimal >= 1],
+    ['regreso', '💙', 'El regreso', 'Volviste después de un día perdido. Eso es lo que importa', (c) => c.comeback],
+    ['racha3', '🔥', 'En marcha', 'Racha de 3 días', (c) => c.best >= 3],
+    ['racha7', '🔥', 'Una semana', 'Racha de 7 días', (c) => c.best >= 7],
+    ['racha14', '🔥', 'Dos semanas', 'Racha de 14 días', (c) => c.best >= 14],
+    ['racha30', '🏅', 'Un mes de hábito', 'Racha de 30 días', (c) => c.best >= 30],
+    ['racha100', '💯', 'Triple dígito', 'Racha de 100 días', (c) => c.best >= 100],
+    ['racha365', '👑', 'Un año', 'Racha de 365 días', (c) => c.best >= 365],
+    ['semana', '📅', 'Semana perfecta', 'Cumpliste la meta semanal', (c) => c.weeks >= 1],
+    ['semanas4', '🗓️', 'Mes perfecto', '4 semanas seguidas cumpliendo la meta', (c) => c.weeks >= 4],
+    ['leccion', '📘', 'Primera lección', 'Completaste la lección 1.1', (c) => c.lessons.has('1.1')],
+    ['u1', '🏆', 'Unidad 1', 'Completaste «Primer paso»', (c) => c.lessons.has(bossOf(1))],
+    ['u2', '🏆', 'Unidad 2', 'Completaste «Construyendo base»', (c) => c.lessons.has(bossOf(2))],
+    ['u3', '🏆', 'Unidad 3', 'Completaste «Fuerza»', (c) => c.lessons.has(bossOf(3))],
+    ['u4', '🎓', 'Trayecto completo', 'Completaste las 4 unidades', (c) => c.lessons.has(bossOf(4))],
+    ['flexion', '💪', 'Flexión de verdad', 'Tu primera flexión completa en el suelo', (c) => c.pushups >= 1],
+    ['flex20', '💥', '20 flexiones', '20 flexiones seguidas en una serie', (c) => c.pushups >= 20],
+    ['tiron', '🧗', 'Primer tirón', 'Tu primer remo invertido bajo la mesa', (c) => c.rows >= 1],
+    ['caminante', '🚶', 'Descanso activo', '5 días de caminata registrados', (c) => c.walks >= 5],
+    ['salvavidas', '❄️', 'Salvavidas', 'Usaste un congelador para salvar la racha', (c) => c.freezes >= 1],
+    ['mil', '🎯', 'Mil repeticiones', '1.000 repeticiones en total', (c) => c.reps >= 1000]
+  ];
+  function achievements(st, today) {
+    const c = achievementCtx(st, today);
+    return ACHIEVEMENTS.map(([id, icon, title, desc, test]) => ({ id, icon, title, desc, got: !!test(c) }));
+  }
+
   const Logic = {
     TZ, MAX_FREEZES, ROUTINES, MINIMAL, EX, defaultState, defaultSettings,
     dayKey, hmNow, addDays, diffDays, weekStart, daysInMonth, dowMon0,
     covered, streakEndingAt, bestStreak, freezesUsed, freezesLeft, canFreeze, streakInfo,
     weekNumber, weekGoal, weekStats, sessionReps, nextType, lastReps,
-    UNITS, LESSONS, LESSON_BY_ID, parseEx, completedLessons, nextLesson, todayPlan, routineFor
+    UNITS, LESSONS, LESSON_BY_ID, parseEx, completedLessons, nextLesson, todayPlan, routineFor,
+    isTraining, dayAdvice, perfectWeeks, bestPerfectWeeks, achievements
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Logic;
   if (typeof document === 'undefined') return;     // en Node termina aquí
@@ -275,7 +362,7 @@
   /* ------------------------------ Estado ------------------------------ */
   let state = load();
   const ui = { view: 'home', today: dayKey(), cal: dayKey().slice(0, 7), workout: null };
-  let restEnd = 0, restTimer = null, audioCtx = null;
+  let restEnd = 0, restTimer = null, audioCtx = null, wakeLock = null, hold = null;
 
   function load() {
     try {
@@ -295,16 +382,22 @@
     const t = $('#toast'); t.textContent = msg; t.hidden = false;
     clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3000);
   }
-  /** Diálogo propio (promesa). buttons: [{label, cls, value}] */
-  function dialog(html, buttons, cls) {
+  /** Diálogo propio (promesa). buttons: [{label, cls, value}].
+      Tocar fuera o pulsar Escape lo cierra con `false`, salvo opts.noDismiss. */
+  function dialog(html, buttons, cls, opts) {
+    const o = opts || {};
     return new Promise((resolve) => {
       const m = $('#modal');
-      m.innerHTML = `<div class="box ${cls || ''}">${html}<div class="row2">${buttons.map((b, i) => `<button class="btn ${b.cls || ''}" data-i="${i}">${esc(b.label)}</button>`).join('')}</div></div>`;
+      m.innerHTML = `<div class="box ${cls || ''}" role="dialog" aria-modal="true">${html}<div class="row2">${buttons.map((b, i) => `<button class="btn ${b.cls || ''}" data-i="${i}">${esc(b.label)}</button>`).join('')}</div></div>`;
       m.hidden = false;
+      const close = (v) => { m.hidden = true; m.onclick = null; document.removeEventListener('keydown', onKey); resolve(v); };
+      const onKey = (e) => { if (e.key === 'Escape' && !o.noDismiss) close(false); };
+      document.addEventListener('keydown', onKey);
       m.onclick = (e) => {
-        const b = e.target.closest('[data-i]'); if (!b) return;
-        m.hidden = true; m.onclick = null; resolve(buttons[b.dataset.i].value);
+        if (e.target === m && !o.noDismiss) { close(false); return; }
+        const b = e.target.closest('[data-i]'); if (b) close(buttons[b.dataset.i].value);
       };
+      const field = m.querySelector('input'); if (field) field.focus({ preventScroll: true });   // nunca el botón: Enter no debe confirmar un borrado
     });
   }
   const showGuide = (id) => dialog(GUIDES.html(id, esc(EX[id].name)), [{ label: 'Entendido', value: true }], 'guide');
@@ -329,9 +422,16 @@
       if (age < 1800) requestAnimationFrame(frame); else ctx.clearRect(0, 0, c.width, c.height);
     })(t0);
   }
-  function beep() {
+  /** iOS solo permite sonar si el audio se "desbloquea" durante un toque del usuario. */
+  function unlockAudio() {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) { /* sin audio */ }
+  }
+  function beep() {
+    try {
+      if (!audioCtx) return;
       const o = audioCtx.createOscillator(), g = audioCtx.createGain();
       o.connect(g); g.connect(audioCtx.destination); o.frequency.value = 880; g.gain.value = 0.15;
       o.start(); o.stop(audioCtx.currentTime + 0.25);
@@ -343,7 +443,17 @@
   function startRest(sec) {
     restEnd = Date.now() + sec * 1000;
     $('#rest').hidden = false;
+    const nx = nextSet(); $('#rest-next').textContent = nx ? `Siguiente: ${nx}` : '';
     clearInterval(restTimer); restTimer = setInterval(tickRest, 250); tickRest();
+  }
+  /** "Flexiones · serie 2" de la primera serie sin marcar. */
+  function nextSet() {
+    const dr = state.draft; if (!dr) return '';
+    for (const e of routineFor(dr).exercises) {
+      const i = dr.sets[e.id].findIndex((x) => !x.d);
+      if (i >= 0) return `${e.name} · serie ${i + 1}`;
+    }
+    return '';
   }
   function stopRest() { clearInterval(restTimer); restTimer = null; $('#rest').hidden = true; }
   function tickRest() {
@@ -353,32 +463,60 @@
   }
 
   /* ------------------------------ Vistas: Hoy ------------------------------ */
+  const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const pickMsg = (k) => MESSAGES[(parseInt(k.replace(/-/g, ''), 10) + Object.keys(state.sessions).length) % MESSAGES.length];
+
   function homeView() {
     const today = ui.today, info = streakInfo(state, today), y = addDays(today, -1);
-    const ws = weekStart(today), wk = weekStats(state, ws), goal = weekGoal(state, ws);
-    const left = freezesLeft(state, today.slice(0, 7));
+    const ws = weekStart(today), wk = weekStats(state, ws), goal = weekGoal(state, ws), pw = perfectWeeks(state, today);
+    const left = freezesLeft(state, today.slice(0, 7)), st = state.settings;
     const plan = todayPlan(state), routine = routineFor(plan), lesson = plan.lesson ? LESSON_BY_ID[plan.lesson] : null;
+    const advice = dayAdvice(state, today), todaySes = state.sessions[today];
+    const hasDraft = state.draft && state.draft.date === today && !state.draft.minimal;
     const frac = Math.min(1, wk.sessions / goal), C = 2 * Math.PI * 40;
 
     let banners = '';
+    if (!isStandalone() && isIOS()) {
+      banners += '<div class="banner info">📲 <b>Instálala</b> para usarla como app: en Safari toca <b>Compartir</b> → <b>Agregar a pantalla de inicio</b>. Ojo: Safari y la app instalada guardan los datos por separado.</div>';
+    }
     if (info.rescuable) {
       banners += `<div class="banner warn">Ayer no entrenaste y tu racha de <b>${info.rescueStreak} días</b> se rompió. ¡Todavía puedes salvarla con un congelador ❄️!
         <button class="btn blue" data-act="freeze" data-day="${y}">Usar congelador (${left} disponible${left === 1 ? '' : 's'})</button></div>`;
     }
     if (info.missedYesterday) {
-      banners += `<div class="banner info">Ayer no pudiste, ¡y está bien! 💙 La regla es <b>nunca fallar dos días seguidos</b>: hoy es obligatorio, aunque sea en modo mínimo (5 min).</div>`;
-    } else if (!info.coveredToday) {
-      banners += `<div class="banner warn">${info.streak > 0 ? `Tu racha de <b>${info.streak} días</b> te espera. ` : ''}Aún no entrenas hoy 🔥 ¡Son solo unos minutos!</div>`;
+      banners += `<div class="banner info">Ayer no pudiste, ¡y está bien! 💙 La regla es <b>nunca fallar dos días seguidos</b>: hoy toca sí o sí, aunque sea el modo mínimo o una caminata.
+        <button class="link" data-act="retro" data-day="${y}">¿Sí entrenaste ayer y olvidaste registrarlo?</button></div>`;
+    } else if (!info.coveredToday && info.streak > 0) {
+      banners += `<div class="banner warn">Tu racha de <b>${info.streak} ${info.streak === 1 ? 'día' : 'días'}</b> te espera 🔥 ${hmNow() >= st.time ? '¡Ya es tu hora!' : `Tu hora: ${esc(st.time)}.`}</div>`;
     }
 
-    const todayCard = info.doneToday
-      ? `<div class="banner ok">✅ <b>¡Hoy completado!</b> ${esc(MESSAGES[(parseInt(today.replace(/-/g, ''), 10) + Object.keys(state.sessions).length) % MESSAGES.length])}</div>`
-      : `<div class="card">${lesson ? `<small>LECCIÓN ${lesson.id} · UNIDAD ${lesson.unit} · ~${lesson.minutes} min</small>` : ''}<h2>${esc(routine.title)}</h2>
-          <ul class="ex-preview">${routine.exercises.map((e) => `<li data-act="guide" data-ex="${e.id}"><span>${esc(e.name)}</span><small>${e.sets}×${esc(e.target)}</small></li>`).join('')}</ul>
-          <button class="btn" data-act="start" data-min="0">${state.draft && state.draft.date === today && !state.draft.minimal ? 'Continuar' : lesson ? 'Empezar lección' : 'Empezar rutina'}</button>
-          <button class="btn secondary" data-act="start" data-min="1">Hoy solo lo mínimo (5 min)</button>
-          ${state.draft && state.draft.date === today ? '' : '<small>El modo mínimo cuenta igual para tu racha.</small>'}</div>`;
+    const anchor = st.anchor ? `<p class="anchor">🎯 Después de <b>${esc(st.anchor)}</b>, a las ${esc(st.time)}</p>` : '';
+    const trainBlock = `${lesson ? `<small>LECCIÓN ${lesson.id} · UNIDAD ${lesson.unit} · ~${lesson.minutes} min</small>` : ''}<h2>${esc(routine.title)}</h2>
+      <ul class="ex-preview">${routine.exercises.map((e) => `<li data-act="guide" data-ex="${e.id}"><span>${esc(e.name)}</span><small>${e.sets}×${esc(e.target)}</small></li>`).join('')}</ul>`;
+    const startLabel = hasDraft ? 'Continuar' : lesson ? 'Empezar lección' : 'Empezar rutina';
+    let todayCard;
+    if (todaySes && todaySes.type === 'W') {
+      todayCard = `<div class="banner ok">🚶 <b>Descanso activo registrado.</b> Tu racha sigue viva. ¿Con energía de sobra? También puedes entrenar.
+        <button class="btn secondary" data-act="start" data-min="0">Entrenar igual</button></div>`;
+    } else if (todaySes) {
+      todayCard = `<div class="banner ok">✅ <b>¡Hoy completado!</b> ${esc(pickMsg(today))}</div>`;
+    } else if (advice === 'rest' && !hasDraft) {
+      todayCard = `<div class="card">${anchor}<small>RECOMENDADO HOY</small><h2>🚶 Descanso activo</h2>
+        <p class="muted">${wk.sessions >= goal ? '¡Ya cumpliste tu meta semanal! 🎉' : 'Ayer entrenaste y vas al día con tu meta.'} El músculo crece mientras descansas: camina 20-30 min y registra el día para mantener la racha.</p>
+        <button class="btn" data-act="walk">Caminé 20 min ✓</button>
+        <button class="btn secondary" data-act="start" data-min="1">Mejor el modo mínimo (5 min)</button>
+        <details class="more"><summary>Prefiero entrenar hoy</summary>${trainBlock}
+          <button class="btn secondary" data-act="start" data-min="0">${startLabel}</button></details></div>`;
+    } else {
+      todayCard = `<div class="card">${anchor}${trainBlock}
+        <button class="btn" data-act="start" data-min="0">${startLabel}</button>
+        <button class="btn secondary" data-act="start" data-min="1">Hoy solo lo mínimo (5 min)</button>
+        <button class="link" data-act="walk">Hoy solo puedo caminar 20 min</button></div>`;
+    }
 
+    const trainings = Object.values(state.sessions).filter(isTraining).length;
+    const needBackup = trainings >= 5 && (!state.lastBackup || diffDays(today, state.lastBackup) >= 30);
     return `
       <div class="hero">
         <div class="flame ${info.coveredToday ? 'on' : ''}" id="flame">🔥</div>
@@ -390,14 +528,16 @@
         </div>
       </div>
       ${banners}
+      ${todayCard}
       <div class="card ring-row">
         <svg class="ring" viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="40"/>
           <circle class="fg" cx="50" cy="50" r="40" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - frac)).toFixed(1)}"/>
           <text x="50" y="58" text-anchor="middle">${wk.sessions}/${goal}</text></svg>
-        <div><h2>Meta semanal</h2><p class="muted">Semana ${weekNumber(state, ws)} · ${goal} sesiones.${wk.sessions >= goal ? ' ¡Meta cumplida! 🎉' : ` Te faltan ${goal - wk.sessions}.`}</p></div>
+        <div><h2>Meta semanal</h2><p class="muted">Semana ${weekNumber(state, ws)} · ${goal} entrenamientos.${wk.sessions >= goal ? ' ¡Meta cumplida! 🎉' : ` Te faltan ${goal - wk.sessions}.`}</p>
+          ${pw > 0 ? `<p class="pw">⭐ ${pw} ${pw === 1 ? 'semana perfecta' : 'semanas perfectas seguidas'}</p>` : ''}</div>
       </div>
-      ${todayCard}
-      ${calendarCard()}`;
+      ${calendarCard()}
+      ${needBackup ? `<div class="banner info">💾 ${state.lastBackup ? 'Hace más de un mes que no respaldas' : 'Aún no respaldas'} tus datos. Si se borran los datos del navegador, perderías tu racha.<button class="btn secondary" data-act="export">Exportar respaldo ahora</button></div>` : ''}`;
   }
 
   function calendarCard() {
@@ -406,14 +546,49 @@
     let cells = ['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d) => `<div class="dow">${d}</div>`).join('') + '<div></div>'.repeat(lead);
     for (let d = 1; d <= n; d++) {
       const k = `${ym}-${pad(d)}`;
-      const cls = ['day', state.sessions[k] ? 'done' : '', state.freezes[k] ? 'frozen' : '', k === today ? 'today' : '', canFreeze(state, k, today) ? 'can-freeze' : ''].join(' ');
-      cells += `<button class="${cls}" data-act="${canFreeze(state, k, today) ? 'freeze' : 'noop'}" data-day="${k}">${d}</button>`;
+      const s = state.sessions[k], cf = canFreeze(state, k, today);
+      const cls = ['day', s ? (s.type === 'W' ? 'walk' : 'done') : '', state.freezes[k] ? 'frozen' : '', k === today ? 'today' : '', cf ? 'can-freeze' : ''].join(' ');
+      cells += `<button class="${cls}" data-act="${cf ? 'freeze' : s ? 'day' : 'noop'}" data-day="${k}">${d}</button>`;
     }
     return `<div class="card"><div class="cal-head">
         <button class="btn-mini" data-act="cal-prev">‹</button><h2 style="margin:0">${MONTHS[mm - 1]} ${yy}</h2>
         <button class="btn-mini" data-act="cal-next">›</button></div>
       <div class="cal">${cells}</div>
-      <div class="legend"><span>🟩 entrenado</span><span>🟦 congelado</span><span>⬜ borde punteado: se puede congelar</span></div></div>`;
+      <div class="legend"><span><i class="lg done"></i>entrenado</span><span><i class="lg walk"></i>caminata</span><span><i class="lg frozen"></i>congelado</span><span><i class="lg can"></i>se puede congelar</span></div>
+      <small>Toca un día para ver qué hiciste.</small></div>`;
+  }
+
+  function sessionLabel(s) {
+    if (s.type === 'W') return '🚶 Descanso activo';
+    if (s.type === 'R') return '✍️ Entrenamiento (registrado después)';
+    if (s.minimal) return '⚡ Modo mínimo';
+    if (s.lesson) return `📘 Lección ${s.lesson} · ${LESSON_BY_ID[s.lesson] ? LESSON_BY_ID[s.lesson].title : ''}${s.partial ? ' (parcial)' : ''}`;
+    return `💪 Día ${s.type}`;
+  }
+  function showDay(k) {
+    const s = state.sessions[k]; if (!s) return;
+    const rows = Object.keys(s.ex || {}).map((id) => {
+      const u = EX[id] && EX[id].unit === 'seg' ? ' seg' : '';
+      return `<li><span>${esc(EX[id] ? EX[id].name : id)}</span><small>${s.ex[id].map((n) => (n == null ? '–' : n)).join(' · ')}${u}</small></li>`;
+    }).join('');
+    dialog(`<small>${k.slice(8)}/${k.slice(5, 7)}/${k.slice(0, 4)}</small><h2>${esc(sessionLabel(s))}</h2>${rows ? `<ul class="ex-preview">${rows}</ul>` : ''}`, [{ label: 'Cerrar', value: true }], 'guide');
+  }
+
+  /** Registra un día sin detalle (caminata o entrenamiento olvidado) y lo celebra. */
+  async function logDay(k, type, msg) {
+    const before = unlockedIds();
+    state.sessions[k] = { type, minimal: false, ex: {} };
+    save(); render(); confetti();
+    const info = streakInfo(state, ui.today);
+    await dialog(`<div class="big">${type === 'W' ? '🚶' : '🔥'}</div><h1>${info.streak} ${info.streak === 1 ? 'día' : 'días'} de racha</h1><p>${esc(msg)}</p>${newBadgesHtml(before)}`, [{ label: 'Continuar', value: true }]);
+  }
+
+  /* -------------------------------- Logros (UI) -------------------------------- */
+  const unlockedIds = () => new Set(achievements(state, dayKey()).filter((a) => a.got).map((a) => a.id));
+  function newBadgesHtml(before) {
+    const nw = achievements(state, dayKey()).filter((a) => a.got && !before.has(a.id));
+    if (!nw.length) return '';
+    return `<p><b>¡Nuevo logro${nw.length > 1 ? 's' : ''}!</b></p><div class="badges">${nw.map((a) => `<div class="badge got"><span>${a.icon}</span><b>${esc(a.title)}</b></div>`).join('')}</div>`;
   }
 
   /* --------------------------- Vistas: Entrenamiento --------------------------- */
@@ -426,8 +601,15 @@
       state.draft = { date: today, type: plan.type, lesson: plan.lesson || null, minimal, sets };
       save();
     }
+    unlockAudio();
     ui.view = 'workout'; render();
   }
+
+  // Calentamiento corto y opcional antes de cada sesión (no cuenta series).
+  const WARMUP = ['30 seg de círculos de brazos (adelante y atrás)', '10 sentadillas lentas sin peso', '10 rotaciones de cadera',
+    '5 flexiones fáciles en la pared', '30 seg de rodillas arriba en el lugar'];
+  /** Tope del rango de repeticiones ("10-12" → 12) para saber cuándo subir la carga. */
+  const rangeTop = (target) => { const m = /^(\d+)-(\d+)/.exec(target); return m ? Number(m[2]) : null; };
 
   function workoutView() {
     const dr = state.draft, r = routineFor(dr), lesson = dr.lesson ? LESSON_BY_ID[dr.lesson] : null;
@@ -435,18 +617,23 @@
     const cards = r.exercises.map((e) => {
       const last = dr.minimal ? null : lastReps(state, e.id), u = e.unit || 'reps';
       const lastTxt = last ? `Última vez: ${last.map((n) => (n == null ? '–' : n)).join(' · ')} ${u}` : '';
-      const hint = lesson ? lastTxt : last ? `${lastTxt} → hoy intenta superarlo por +1` : (dr.minimal ? '' : 'Primera vez: anota tus repeticiones para tener un punto de partida.');
+      const top = rangeTop(e.target), maxed = !lesson && top && last && last.every((n) => typeof n === 'number' && n >= top);
+      const hint = lesson ? lastTxt : maxed ? `${lastTxt} → ¡llegaste al tope del rango! Suma peso a la mochila (1-2 libros) y vuelve a la parte baja del rango`
+        : last ? `${lastTxt} → hoy intenta superarlo por +1` : (dr.minimal ? '' : 'Primera vez: anota tus repeticiones para tener un punto de partida.');
       const sets = dr.sets[e.id].map((s, i) => {
         const ph = !lesson && last && typeof last[i] === 'number' ? last[i] + 1 : e.def;   // en lecciones la meta es la de la lección
         return `<div class="set ${s.d ? 'done' : ''}" data-ex="${e.id}" data-i="${i}"><label>Serie ${i + 1}</label>
           <input type="number" inputmode="numeric" min="0" placeholder="${ph} ${u}" value="${esc(s.v)}" aria-label="${esc(e.name)} serie ${i + 1} (${u})">
+          ${u === 'seg' ? '<button class="hold" data-act="hold" aria-label="Iniciar cronómetro">▶</button>' : ''}
           <button class="check" data-act="check" aria-label="Marcar serie">✓</button></div>`;
       }).join('');
-      return `<div class="card ex-card"><h3><span>${esc(e.name)}</span><span class="target">${e.sets}×${esc(e.target)}</span></h3><button class="info-btn" data-act="guide" data-ex="${e.id}">▶ Cómo hacerlo</button>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}${sets}</div>`;
+      const complete = dr.sets[e.id].every((x) => x.d);
+      return `<div class="card ex-card ${complete ? 'complete' : ''}" data-card="${e.id}"><h3><span>${esc(e.name)}</span><span class="target">${e.sets}×${esc(e.target)}</span></h3><button class="info-btn" data-act="guide" data-ex="${e.id}">▶ Cómo hacerlo</button>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}${sets}</div>`;
     }).join('');
     return `<div class="top"><button class="x" data-act="back" aria-label="Salir">✕</button><div class="bar"><i id="wbar"></i></div></div>
       <h1>${esc(lesson ? `Lección ${lesson.id} · ${r.title}` : r.title)}</h1>
-      ${rir ? `<div class="banner info">💡 <b>Intensidad RIR ${rir}:</b> termina cada serie sintiendo que podrías hacer unas ${rir} repeticiones más. La primera serie de cada ejercicio puede ser más suave (aproximación). Si una serie te cuesta mucho menos o mucho más, ajusta la carga de la mochila.</div>` : ''}${cards}
+      ${rir ? `<div class="banner info">💡 <b>Intensidad RIR ${rir}:</b> termina cada serie sintiendo que podrías hacer unas ${rir} repeticiones más. La primera serie de cada ejercicio puede ser más suave (aproximación). Si una serie te cuesta mucho menos o mucho más, ajusta la carga o la variante.</div>` : ''}
+      ${dr.minimal ? '' : `<details class="card warmup"><summary>🔥 Calentamiento (2 min, opcional)</summary><ul class="steps">${WARMUP.map((w) => `<li>${w}</li>`).join('')}</ul></details>`}${cards}
       <button class="btn" id="finish" data-act="finish">Terminar sesión</button>`;
   }
 
@@ -458,10 +645,55 @@
     if (fin) { fin.disabled = done === 0; fin.textContent = done === all.length ? '¡Terminar sesión!' : 'Terminar sesión'; }
   }
 
+  /** Marca/desmarca una serie: progreso, descanso (doble al cerrar un ejercicio) y salto al siguiente. */
+  function markSet(row, done) {
+    const sets = state.draft.sets[row.dataset.ex], s = sets[row.dataset.i];
+    s.d = done; row.classList.toggle('done', done); save(); refreshWorkoutProgress();
+    const card = row.closest('.ex-card'), exDone = sets.every((x) => x.d);
+    card.classList.toggle('complete', exDone);
+    const all = Object.values(state.draft.sets).flat();
+    if (done && !all.every((x) => x.d)) startRest(state.settings.rest * (exDone ? 2 : 1)); else stopRest();
+    if (done && navigator.vibrate) navigator.vibrate(30);
+    if (done && exDone) {
+      const next = Array.from(document.querySelectorAll('.ex-card:not(.complete)'))[0];
+      if (next) setTimeout(() => next.scrollIntoView({ behavior: 'smooth', block: 'start' }), 350);
+    }
+  }
+
+  /* Cronómetro de series por tiempo (plancha): cuenta atrás desde la meta y marca la serie.
+     Tocar de nuevo lo detiene y anota los segundos aguantados. */
+  function startHold(row) {
+    if (hold) { const same = hold.row === row; finishHold(true); if (same) return; }
+    unlockAudio(); stopRest();
+    const inp = row.querySelector('input');
+    const secs = Number(inp.value) || parseInt(inp.placeholder, 10) || 30;
+    hold = { row, total: secs, start: Date.now(), end: Date.now() + secs * 1000, t: setInterval(tickHold, 200) };
+    row.classList.add('holding'); tickHold();
+  }
+  function tickHold() {
+    const left = Math.ceil((hold.end - Date.now()) / 1000);
+    if (left <= 0) { finishHold(false); return; }
+    hold.row.querySelector('.hold').textContent = left;
+  }
+  function finishHold(early) {
+    const h = hold; if (!h) return;
+    clearInterval(h.t); hold = null;
+    h.row.classList.remove('holding');
+    const b = h.row.querySelector('.hold'); if (b) b.textContent = '▶';
+    if (!document.body.contains(h.row)) return;
+    const secs = early ? Math.round((Date.now() - h.start) / 1000) : h.total;
+    if (early && secs < 3) return;                    // toque accidental
+    h.row.querySelector('input').value = secs;
+    state.draft.sets[h.row.dataset.ex][h.row.dataset.i].v = String(secs);
+    if (!early) beep();
+    markSet(h.row, true);
+  }
+
   async function finishWorkout() {
     const dr = state.draft, all = Object.values(dr.sets).flat(), done = all.filter((s) => s.d).length;
     const routine = routineFor(dr), partial = !!dr.lesson && done < Math.ceil(all.length * 0.8);
     if (done < all.length && !(await confirmBox(`Te faltan ${all.length - done} series. ¿Guardar la sesión igual?${dr.lesson ? ' La racha cuenta; la lección se supera con al menos el 80% de las series.' : ''}`, 'Guardar'))) return;
+    const before = unlockedIds();
     const ex = {};
     for (const id in dr.sets) {
       const def = routine.exercises.find((e) => e.id === id).def;
@@ -471,8 +703,8 @@
     state.sessions[today] = { type: dr.type, minimal: dr.minimal, ex };
     if (dr.lesson) { state.sessions[today].lesson = dr.lesson; if (partial) state.sessions[today].partial = true; }
     state.draft = null; save(); stopRest();
-    ui.view = 'home'; ui.today = today; ui.cal = today.slice(0, 7);
-    const info = streakInfo(state, today);
+    ui.view = 'home'; ui.today = dayKey(); ui.cal = ui.today.slice(0, 7);   // si terminó pasada la medianoche, la sesión queda en el día que empezó
+    const info = streakInfo(state, ui.today);
     let msg = dr.minimal ? 'Los 5 minutos también cuentan. ¡Eso es constancia! 💚' : MESSAGES[Object.keys(state.sessions).length % MESSAGES.length];
     let lessonMsg = '';
     if (dr.lesson) {
@@ -482,7 +714,7 @@
     }
     render(); confetti();
     const f = $('#flame'); if (f) f.classList.add('pop');
-    await dialog(`<div class="big">🔥</div><h1>${info.streak} ${info.streak === 1 ? 'día' : 'días'} de racha</h1><p>${esc(msg)}</p>${lessonMsg ? `<p><b>${esc(lessonMsg)}</b></p>` : ''}`, [{ label: 'Continuar', value: true }]);
+    await dialog(`<div class="big">🔥</div><h1>${info.streak} ${info.streak === 1 ? 'día' : 'días'} de racha</h1><p>${esc(msg)}</p>${lessonMsg ? `<p><b>${esc(lessonMsg)}</b></p>` : ''}${newBadgesHtml(before)}`, [{ label: 'Continuar', value: true }]);
   }
 
   /* ---------------------------- Vistas: Trayecto ---------------------------- */
@@ -535,18 +767,55 @@
     if (goal) s += `<line x1="${pl}" x2="${W - pl}" y1="${y(goal).toFixed(1)}" y2="${y(goal).toFixed(1)}" stroke="#ff9600" stroke-dasharray="4 3"/>`;
     return s + '</svg>';
   }
+  /** Línea simple para peso o cintura. points: [{k, v}] ordenados por fecha. */
+  function lineChart(points, color, unit) {
+    if (points.length < 2) return '<p class="muted">Registra al menos 2 mediciones para ver la curva.</p>';
+    const W = 320, H = 120, pl = 34, pr = 12, pt = 14, pb = 20, vs = points.map((p) => p.v);
+    let min = Math.min(...vs), max = Math.max(...vs);
+    if (max - min < 1) { max += 0.5; min -= 0.5; }
+    const x = (i) => pl + ((W - pl - pr) * i) / (points.length - 1), y = (v) => pt + (H - pt - pb) * (1 - (v - min) / (max - min));
+    const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ');
+    const lbl = (k) => `${k.slice(8)}/${k.slice(5, 7)}`;
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">
+      <text x="2" y="${y(max) + 4}">${max.toFixed(1)}</text><text x="2" y="${y(min) + 4}">${min.toFixed(1)}</text>
+      <path d="${d}" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+      ${points.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="3.5" fill="${color}"/>`).join('')}
+      <text x="${pl}" y="${H - 4}">${lbl(points[0].k)}</text><text x="${W - pr}" y="${H - 4}" text-anchor="end">${lbl(points[points.length - 1].k)}</text>
+      <text class="val" x="${W - pr}" y="10" text-anchor="end">${vs[vs.length - 1]} ${unit}</text></svg>`;
+  }
+  function bodyCard() {
+    const keys = Object.keys(state.body).sort(), last = keys.length ? state.body[keys[keys.length - 1]] : {};
+    const series = (f) => keys.filter((k) => typeof state.body[k][f] === 'number').map((k) => ({ k, v: state.body[k][f] }));
+    const kg = series('kg'), cm = series('cm');
+    const delta = (a, u) => (a.length >= 2 ? ` (${a[a.length - 1].v - a[0].v >= 0 ? '+' : ''}${(a[a.length - 1].v - a[0].v).toFixed(1)} ${u} desde el inicio)` : '');
+    return `<div class="card"><h2>⚖️ Peso y cintura</h2>
+      <p class="muted">En recomposición el peso casi no cambia: la cintura y tus repeticiones cuentan mejor la historia. Mídete una vez por semana, en ayunas, el mismo día.</p>
+      <div class="row"><label for="b-kg">Peso (kg)</label><input id="b-kg" type="text" inputmode="decimal" placeholder="${last.kg || '73,5'}"></div>
+      <div class="row"><label for="b-cm">Cintura (cm, a la altura del ombligo)</label><input id="b-cm" type="text" inputmode="decimal" placeholder="${last.cm || '80'}"></div>
+      <button class="btn secondary" data-act="body-save">Guardar medición de hoy</button>
+      ${kg.length ? `<h3>Peso${delta(kg, 'kg')}</h3>${lineChart(kg, '#ff9600', 'kg')}` : ''}
+      ${cm.length ? `<h3>Cintura${delta(cm, 'cm')}</h3>${lineChart(cm, '#58cc02', 'cm')}` : ''}</div>`;
+  }
+  function badgesCard() {
+    const list = achievements(state, ui.today), got = list.filter((a) => a.got).length;
+    return `<div class="card"><h2>🏅 Logros · ${got}/${list.length}</h2><div class="badges">${list.map((a) =>
+      `<div class="badge ${a.got ? 'got' : ''}"><span>${a.got ? a.icon : '🔒'}</span><b>${esc(a.title)}</b><small>${esc(a.desc)}</small></div>`).join('')}</div></div>`;
+  }
+
   function progressView() {
     const ws0 = weekStart(ui.today), weeks = [];
     for (let i = 7; i >= 0; i--) { const ws = addDays(ws0, -7 * i); weeks.push({ ws, ...weekStats(state, ws) }); }
     const labels = weeks.map((w) => `${w.ws.slice(8)}/${w.ws.slice(5, 7)}`);
-    const total = Object.keys(state.sessions).length, info = streakInfo(state, ui.today);
+    const total = Object.values(state.sessions).filter(isTraining).length, info = streakInfo(state, ui.today);
     return `<h1>Tu progreso</h1>
       <div class="card"><div class="chips" style="margin:0;justify-content:space-around">
-        <span class="chip">🔥 ${info.streak} racha</span><span class="chip">🏆 ${info.best} récord</span><span class="chip">💪 ${total} sesiones</span></div></div>
+        <span class="chip">🔥 ${info.streak} racha</span><span class="chip">🏆 ${info.best} récord</span><span class="chip">💪 ${total} entrenamientos</span><span class="chip">⭐ ${perfectWeeks(state, ui.today)} sem. perfectas</span></div></div>
+      ${badgesCard()}
       <div class="card"><h2>Sesiones por semana</h2><small>La línea naranja es tu meta semanal actual.</small>
         ${barChart(weeks.map((w) => w.sessions), labels, '#58cc02', weekGoal(state, ws0))}</div>
       <div class="card"><h2>Repeticiones totales por semana</h2><small>No incluye la plancha (va en segundos). Etiquetas: lunes de cada semana.</small>
-        ${barChart(weeks.map((w) => w.reps), labels, '#1cb0f6')}</div>`;
+        ${barChart(weeks.map((w) => w.reps), labels, '#1cb0f6')}</div>
+      ${bodyCard()}`;
   }
 
   /* ---------------------------- Vistas: Ajustes ---------------------------- */
@@ -556,6 +825,7 @@
       <div class="card"><h2>📖 Guía de ejercicios</h2><p class="muted">Toca uno para ver la animación y cómo hacerlo bien.</p>
         <div class="guide-list">${GUIDES.ids.map((id) => `<button class="btn-mini" data-act="guide" data-ex="${id}">${esc(EX[id].name)}</button>`).join('')}</div></div>
       <div class="card"><h2>⏰ Recordatorio</h2>
+        <div class="row"><label for="s-anchor">Después de… (tu gatillo)</label><input id="s-anchor" type="text" maxlength="60" placeholder="llegar a casa" value="${esc(st.anchor || '')}"></div>
         <div class="row"><label for="s-time">Hora</label><input id="s-time" type="time" value="${esc(st.time)}"></div>
         <div class="row"><label for="s-path">Usar el trayecto (lecciones que suben de nivel)</label><input id="s-path" type="checkbox" ${st.path !== false ? 'checked' : ''}></div>
         <div class="row"><label for="s-rest">Descanso entre series</label>
@@ -571,21 +841,24 @@
           <li>Toca <b>+</b> → <b>Hora del día</b>.</li>
           <li>Elige tu hora (${esc(st.time)}), selecciona <b>Diariamente</b> y toca <b>Siguiente</b>.</li>
           <li>Toca <b>Añadir acción</b> → busca <b>Mostrar notificación</b> y escribe: «¡Hora de tu rutina! 🔥 Cuida tu racha».</li>
-          <li>Toca <b>+</b> para otra acción → busca <b>Abrir app</b> y elige «Rutina» (si aparece en la lista). Si no aparece, usa <b>Abrir URL</b> con la dirección de abajo.</li>
+          <li>Toca <b>+</b> para otra acción → busca <b>Abrir app</b> y elige «Rutina» (la app instalada en tu pantalla de inicio).</li>
           <li>Toca <b>Siguiente</b>, activa <b>Ejecutar inmediatamente</b> y desactiva «Notificar al ejecutar». Toca <b>Aceptar</b>.</li>
           <li>Comprueba en Ajustes → Notificaciones → <b>Atajos</b> que las notificaciones estén permitidas.</li>
         </ol>
-        <p class="muted">Nota: «Abrir URL» abre Safari, no la app instalada; úsalo solo si «Abrir app» no te deja elegir la app.</p>
+        <p class="muted">Evita «Abrir URL»: abre Safari, que guarda los datos aparte de la app instalada, y verías la app vacía. Si «Abrir app» no muestra «Rutina», basta con la notificación: tócala y abre la app desde su ícono.</p>
+        <p class="muted">Truco: en la pantalla de inicio puedes agregar el widget de <b>Atajos</b> con un atajo que abra la app. Es lo más parecido a un widget que permite iOS para una web app.</p>
         <div class="url">${esc(location.href.split('#')[0])}</div></details></div>
 
       <div class="card"><h2>💾 Respaldo de datos</h2>
-        <p class="muted">Todo se guarda solo en este dispositivo (localStorage). Si borras los datos de Safari o desinstalas la app, se pierde: haz respaldos de vez en cuando.</p>
+        <p class="muted">Todo se guarda solo en este dispositivo. Si borras los datos de Safari o desinstalas la app, se pierde: haz respaldos de vez en cuando.</p>
+        <p class="muted">Último respaldo: <b>${state.lastBackup ? `${state.lastBackup.slice(8)}/${state.lastBackup.slice(5, 7)}/${state.lastBackup.slice(0, 4)}` : 'nunca'}</b></p>
         <button class="btn secondary" data-act="export">Exportar respaldo (.json)</button>
         <button class="btn secondary" data-act="copy">Copiar respaldo al portapapeles</button>
         <label class="btn secondary" style="cursor:pointer">Importar desde archivo<input id="imp-file" type="file" accept="application/json,.json" hidden></label>
         <textarea id="imp-text" placeholder="…o pega aquí el respaldo JSON"></textarea>
         <button class="btn secondary" data-act="import-text">Importar texto pegado</button>
-        <button class="btn danger" data-act="reset">Borrar todos los datos</button></div>`;
+        <button class="btn danger" data-act="reset">Borrar todos los datos</button></div>
+      <button class="btn secondary" data-act="onboarding">Ver la introducción otra vez</button>`;
   }
 
   /* -------------------------- Respaldo: exportar/importar -------------------------- */
@@ -594,6 +867,7 @@
     const url = URL.createObjectURL(new Blob([backupJSON()], { type: 'application/json' }));
     const a = document.createElement('a'); a.href = url; a.download = `rutina-respaldo-${dayKey()}.json`;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+    state.lastBackup = dayKey(); save();
   }
   async function importJSON(text) {
     let data;
@@ -602,6 +876,35 @@
     if (!(await confirmBox(`Esto reemplazará tus datos actuales por el respaldo (${Object.keys(data.sessions).length} sesiones). ¿Continuar?`, 'Importar'))) return;
     state = Object.assign(defaultState(dayKey()), data, { settings: Object.assign(defaultSettings(), data.settings) });
     save(); scheduleChecks(); render(); toast('✅ Respaldo importado');
+  }
+
+  /* ---------------------------------- Bienvenida ---------------------------------- */
+  async function onboarding() {
+    const nd = { noDismiss: true };
+    await dialog(`<div class="big">🔥</div><h1>¡Hola!</h1><p>Esta app funciona como tu racha de Duolingo, pero para entrenar en casa.</p>
+      <ul class="steps"><li><b>Racha diaria:</b> entrenar, el modo mínimo (5 min) o una caminata de 20 min: todo cuenta.</li>
+      <li><b>Regla de oro:</b> nunca fallar dos días seguidos.</li>
+      <li><b>Trayecto:</b> lecciones cortas que suben de nivel poco a poco. Empiezas desde cero.</li></ul>`, [{ label: 'Siguiente', value: true }], 'guide', nd);
+    await dialog(`<h2>🎯 Tu gatillo</h2><p>Un hábito se pega mejor a algo que ya haces todos los días. Completa la frase:</p>
+      <label class="field">Después de…<input id="ob-anchor" type="text" maxlength="60" placeholder="llegar a casa del trabajo" value="${esc(state.settings.anchor || '')}"></label>
+      <label class="field">…a eso de las<input id="ob-time" type="time" value="${esc(state.settings.time)}"></label>`, [{ label: 'Guardar', value: true }], 'guide', nd);
+    const a = $('#ob-anchor'), t = $('#ob-time');
+    if (a && a.value.trim()) state.settings.anchor = a.value.trim();
+    if (t && t.value) { state.settings.time = t.value; state.lastNotified = null; }
+    await dialog(`<h2>📲 Último paso</h2>${isStandalone() ? '' : '<p><b>Instálala:</b> en Safari toca Compartir → Agregar a pantalla de inicio, y usa siempre ese ícono (Safari y la app instalada guardan los datos por separado).</p>'}
+      <p><b>Recordatorio diario:</b> en Ajustes hay una guía para que la app Atajos te avise todos los días a tu hora. En iPhone es lo que mejor funciona.</p>`, [{ label: '¡Vamos!', value: true }], 'guide', nd);
+    state.onboarded = true; save(); render();
+  }
+
+  /* ------------------------------- Pantalla encendida ------------------------------- */
+  /** Evita que el iPhone apague la pantalla durante el entrenamiento (si el navegador lo permite). */
+  async function keepAwake(on) {
+    try {
+      if (on && !wakeLock && 'wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+    } catch (e) { /* no soportado o denegado: no pasa nada */ }
   }
 
   /* ------------------------------- Notificaciones ------------------------------- */
@@ -629,7 +932,7 @@
     const t = dayKey();
     if (t !== ui.today) {
       ui.today = t; ui.cal = t.slice(0, 7);
-      if (ui.view === 'home' || ui.view === 'progress') render();
+      if (ui.view !== 'workout') render();
     }
     checkReminder();
   }
@@ -643,6 +946,8 @@
     appEl.innerHTML = v === 'workout' ? workoutView() : v === 'path' ? pathView() : v === 'progress' ? progressView() : v === 'settings' ? settingsView() : homeView();
     document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === v));
     if (v === 'workout') refreshWorkoutProgress(); else if (!$('#rest').hidden) stopRest();
+    if (v !== 'workout' && hold) { clearInterval(hold.t); hold = null; }
+    keepAwake(v === 'workout');
     if (v === 'path') requestAnimationFrame(() => { const c = $('.node.current'); if (c) c.scrollIntoView({ block: 'center' }); });
     else window.scrollTo(0, 0);
   }
@@ -664,15 +969,30 @@
         if (await confirmBox('¿Salir? Tu progreso de hoy queda guardado como borrador.', 'Salir')) { ui.view = 'home'; render(); }
         break;
       case 'check': {
-        const row = el.closest('.set'), s = state.draft.sets[row.dataset.ex][row.dataset.i];
-        s.d = !s.d; row.classList.toggle('done', s.d); save(); refreshWorkoutProgress();
-        const all = Object.values(state.draft.sets).flat();
-        // 1 min entre series; el doble al terminar un ejercicio (como en la rutina del curso: micropausa y macropausa)
-        const lastOfEx = Number(row.dataset.i) === state.draft.sets[row.dataset.ex].length - 1;
-        if (s.d && !all.every((x) => x.d)) startRest(state.settings.rest * (lastOfEx ? 2 : 1)); else stopRest();
-        if (s.d && navigator.vibrate) navigator.vibrate(30);
+        const row = el.closest('.set');
+        if (hold && hold.row === row) { clearInterval(hold.t); hold = null; row.classList.remove('holding'); row.querySelector('.hold').textContent = '▶'; }
+        unlockAudio(); markSet(row, !state.draft.sets[row.dataset.ex][row.dataset.i].d);
         break;
       }
+      case 'hold': startHold(el.closest('.set')); break;
+      case 'day': showDay(el.dataset.day); break;
+      case 'walk': logDay(ui.today, 'W', '¡Descanso activo registrado! Caminar también es entrenar tu constancia 💚'); break;
+      case 'retro':
+        if (await confirmBox('¿Registrar ayer como día entrenado? Úsalo solo si de verdad entrenaste 😉', 'Registrar')) {
+          logDay(el.dataset.day, 'R', '¡Listo! Ayer quedó registrado y tu racha sigue viva.');
+        }
+        break;
+      case 'body-save': {
+        const num = (id) => { const v = parseFloat(($(id).value || '').replace(',', '.')); return isFinite(v) && v > 0 ? Math.round(v * 10) / 10 : null; };
+        const kg = num('#b-kg'), cm = num('#b-cm');
+        if (kg == null && cm == null) { toast('Escribe tu peso o tu cintura'); break; }
+        if ((kg != null && (kg < 30 || kg > 250)) || (cm != null && (cm < 40 || cm > 200))) { toast('Revisa el número: parece fuera de rango'); break; }
+        const prev = state.body[ui.today] || {};
+        state.body[ui.today] = { kg: kg != null ? kg : prev.kg, cm: cm != null ? cm : prev.cm };
+        save(); render(); toast('✅ Medición guardada');
+        break;
+      }
+      case 'onboarding': onboarding(); break;
       case 'finish': finishWorkout(); break;
       case 'rest-plus': restEnd += 15000; tickRest(); break;
       case 'rest-minus': restEnd -= 15000; tickRest(); break;
@@ -694,7 +1014,7 @@
       case 'notify': enableNotifications(); break;
       case 'export': exportFile(); break;
       case 'copy':
-        try { await navigator.clipboard.writeText(backupJSON()); toast('📋 Respaldo copiado'); } catch (err) { toast('No pude copiar. Usa «Exportar».'); }
+        try { await navigator.clipboard.writeText(backupJSON()); state.lastBackup = dayKey(); save(); toast('📋 Respaldo copiado'); } catch (err) { toast('No pude copiar. Usa «Exportar».'); }
         break;
       case 'import-text': importJSON($('#imp-text').value); break;
       case 'reset':
@@ -710,7 +1030,8 @@
     const inp = e.target;
     if (inp.matches('.set input') && state.draft) {            // anota repeticiones sin re-renderizar
       const row = inp.closest('.set'); state.draft.sets[row.dataset.ex][row.dataset.i].v = inp.value; save();
-    } else if (inp.id === 's-time') { state.settings.time = inp.value || '20:00'; state.lastNotified = null; save(); }
+    } else if (inp.id === 's-anchor') { state.settings.anchor = inp.value.trim(); save(); }
+    else if (inp.id === 's-time') { state.settings.time = inp.value || '20:00'; state.lastNotified = null; save(); }
     else if (inp.id === 's-path') { state.settings.path = inp.checked; save(); }
     else if (inp.id === 's-rest') { state.settings.rest = Number(inp.value); save(); }
   });
@@ -718,10 +1039,17 @@
     if (e.target.id !== 'imp-file' || !e.target.files[0]) return;
     const r = new FileReader(); r.onload = () => importJSON(String(r.result)); r.readAsText(e.target.files[0]); e.target.value = '';
   });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    tick();
+    if (ui.view === 'workout') keepAwake(true);    // iOS suelta el bloqueo al salir de la app
+  });
 
   /* ---------------------------------- Inicio ---------------------------------- */
   render(); tick(); scheduleChecks();
+  if (!state.onboarded) onboarding();
+  // Pide al navegador no borrar los datos aunque falte espacio (Safari 17+; si no, se ignora)
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if ('serviceWorker' in navigator) {
     // Si una versión nueva toma el control, recarga una vez para mostrarla (no si es la primera instalación)
     const hadController = !!navigator.serviceWorker.controller; let reloaded = false;

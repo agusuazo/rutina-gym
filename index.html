@@ -22,7 +22,7 @@
 
   <!-- Temporizador de descanso (aparece al marcar una serie) -->
   <div id="rest" class="rest" hidden>
-    <span class="rest-label">Descanso</span>
+    <span class="rest-info"><span class="rest-label">Descanso</span><span id="rest-next" class="rest-next"></span></span>
     <span id="rest-time" class="rest-time">1:15</span>
     <button class="btn-mini" data-act="rest-minus">−15</button>
     <button class="btn-mini" data-act="rest-plus">+15</button>
@@ -37,7 +37,7 @@
   </nav>
 
   <canvas id="confetti" aria-hidden="true"></canvas>
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <div id="modal" class="modal" hidden></div>
 
   <script src="guides.js"></script>

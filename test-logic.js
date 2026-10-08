@@ -216,4 +216,76 @@ t('routineFor devuelve lección, rutina A/B o modo mínimo; las lecciones se gua
   assert.strictEqual(L.sessionReps({ ex: { 'plancha-rod': [20, 20], 'flex-rod': [6, 6] } }), 12);   // segundos no suman
 });
 
+console.log('Descanso activo, registro tardío y recomendación del día');
+const ses = (type, extra) => Object.assign({ type, minimal: false, ex: {} }, extra || {});
+t('una caminata cuenta para la racha pero no para la meta semanal ni para la rotación A/B', () => {
+  const st = L.defaultState('2026-10-05');
+  st.sessions['2026-10-05'] = ses('A'); st.sessions['2026-10-06'] = ses('W'); st.sessions['2026-10-07'] = ses('B');
+  assert.strictEqual(L.streakInfo(st, '2026-10-07').streak, 3);
+  assert.strictEqual(L.weekStats(st, '2026-10-05').sessions, 2);
+  assert.strictEqual(L.nextType(st), 'A');
+});
+t('día perdido + caminata hoy: la racha reinicia en 1 (la caminata salva hoy, no ayer)', () => {
+  const st = L.defaultState('2026-10-01');
+  st.sessions['2026-10-04'] = ses('A'); st.sessions['2026-10-06'] = ses('W');
+  assert.strictEqual(L.streakInfo(st, '2026-10-06').streak, 1);
+});
+t('registrar ayer (olvidado) recupera la racha y suma a la meta semanal', () => {
+  const st = L.defaultState('2026-10-01');
+  st.sessions['2026-10-05'] = ses('A');
+  assert.strictEqual(L.streakInfo(st, '2026-10-07').lost, true);
+  st.sessions['2026-10-06'] = ses('R');
+  const i = L.streakInfo(st, '2026-10-07');
+  assert.strictEqual(i.lost, false); assert.strictEqual(i.streak, 2);
+  assert.strictEqual(L.weekStats(st, '2026-10-05').sessions, 2);
+});
+t('recomendación: semana de meta 3 queda L-Mi-V entrenar y el resto descanso activo', () => {
+  const st = L.defaultState('2026-09-07');                       // así la semana del 5 oct es la 5ª (meta 3)
+  assert.strictEqual(L.weekGoal(st, '2026-10-05'), 3);
+  const plan = {};
+  for (let d = 0; d < 7; d++) {
+    const k = L.addDays('2026-10-05', d), a = L.dayAdvice(st, k);
+    plan[k] = a;
+    st.sessions[k] = ses(a === 'train' ? 'A' : 'W');
+  }
+  assert.deepStrictEqual(Object.values(plan), ['train', 'rest', 'train', 'rest', 'train', 'rest', 'rest']);
+});
+t('recomendación: si se atrasó la semana, pide entrenar aunque ayer entrenaste', () => {
+  const st = L.defaultState('2026-09-07');
+  st.sessions['2026-10-10'] = ses('A');                          // sábado; meta 3, lleva 1
+  assert.strictEqual(L.dayAdvice(st, '2026-10-11'), 'train');    // domingo: necesita 2 y solo queda hoy
+  assert.strictEqual(L.dayAdvice(L.defaultState('2026-10-05'), '2026-10-05'), 'train');   // primer día
+});
+t('modo mínimo ayer no cuenta como "ya entrenaste": hoy recomienda entrenar', () => {
+  const st = L.defaultState('2026-09-07');
+  st.sessions['2026-10-05'] = ses('A', { minimal: true });
+  assert.strictEqual(L.dayAdvice(st, '2026-10-06'), 'train');
+});
+
+console.log('Semanas perfectas y logros');
+t('semanas perfectas: la semana en curso no corta la cadena si aún no se cumple', () => {
+  const st = L.defaultState('2026-09-21');                       // semanas 1-3 con meta 2
+  ['2026-09-21', '2026-09-23', '2026-09-28', '2026-09-30'].forEach((k) => { st.sessions[k] = ses('A'); });
+  assert.strictEqual(L.perfectWeeks(st, '2026-10-06'), 2);       // semana actual (3ª) aún sin cumplir
+  st.sessions['2026-10-05'] = ses('A'); st.sessions['2026-10-07'] = ses('B');
+  assert.strictEqual(L.perfectWeeks(st, '2026-10-07'), 3);
+  assert.strictEqual(L.bestPerfectWeeks(st, '2026-10-20'), 3);   // luego falla la 4ª: el mejor queda en 3
+  assert.strictEqual(L.perfectWeeks(st, '2026-10-20'), 0);
+});
+t('logros: se desbloquean por historial y no se pierden al romper la racha', () => {
+  const st = L.defaultState('2026-10-01');
+  const got = (today) => L.achievements(st, today).filter((a) => a.got).map((a) => a.id);
+  assert.deepStrictEqual(got('2026-10-01'), []);
+  ['2026-10-01', '2026-10-02', '2026-10-03'].forEach((k) => { st.sessions[k] = ses('P', { lesson: '1.1', ex: { 'flex-pared': [8, 8] } }); });
+  assert.ok(got('2026-10-03').includes('racha3') && got('2026-10-03').includes('leccion') && got('2026-10-03').includes('primera'));
+  assert.ok(!got('2026-10-03').includes('regreso'));
+  st.sessions['2026-10-06'] = ses('A', { minimal: true, ex: { flexiones: [10] } });  // día perdido y vuelta en mínimo
+  const g = got('2026-10-06');
+  assert.ok(g.includes('racha3') && g.includes('regreso') && g.includes('minimo'));
+  assert.ok(!g.includes('flexion'));                            // las flexiones del modo mínimo no cuentan
+  st.sessions['2026-10-07'] = ses('A', { ex: { flexiones: [3, 2, 0] } });
+  assert.ok(got('2026-10-07').includes('flexion'));
+  assert.strictEqual(L.achievements(st, '2026-10-07').length, 22);
+});
+
 console.log(`\n${passed} pruebas OK`);
