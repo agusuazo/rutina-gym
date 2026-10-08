@@ -148,3 +148,26 @@ details summary { cursor: pointer; font-weight: 800; padding: 4px 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Guías de ejercicios (figuras animadas) */
+.fig { width: 100%; max-height: 220px; background: var(--bg); border-radius: 14px; margin: 6px 0 10px; display: block; }
+.fig .floor { stroke: var(--line); stroke-width: 3; }
+.fig .body { fill: none; stroke: var(--text); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.fig .body.hl { stroke: var(--green); }
+.fig .leg2 { opacity: .5; }
+.fig .head { fill: var(--text); }
+.fig .load { fill: var(--orange); }
+.fig .prop rect { fill: #2a3a44; stroke: #52646f; stroke-width: 1.5; }
+.fig .guide { stroke: var(--blue); stroke-width: 2; stroke-dasharray: 5 5; animation: dash 1s linear infinite; }
+@keyframes dash { to { stroke-dashoffset: -10; } }
+.muscles { color: var(--green); font-weight: 700; font-size: .9rem; margin-bottom: 8px; }
+.modal .box { max-height: 90vh; overflow-y: auto; }
+.modal .box.guide { text-align: left; }
+.modal .box.guide .banner { margin: 10px 0; font-size: .9rem; }
+.modal .box.guide .row2 { margin-top: 12px; }
+ul.steps.bad { list-style: none; padding-left: 0; }
+ul.steps.bad li::before { content: "✗ "; color: var(--red); font-weight: 900; }
+.info-btn { background: none; border: 0; color: var(--blue); font-weight: 700; font-size: .85rem; padding: 4px 0 8px; cursor: pointer; font-family: inherit; }
+.ex-preview li[data-act] { cursor: pointer; }
+.ex-preview li[data-act] > span::after { content: " ⓘ"; color: var(--blue); }
+.guide-list { display: flex; flex-wrap: wrap; gap: 8px; }

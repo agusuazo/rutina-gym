@@ -208,10 +208,10 @@
     clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3000);
   }
   /** Diálogo propio (promesa). buttons: [{label, cls, value}] */
-  function dialog(html, buttons) {
+  function dialog(html, buttons, cls) {
     return new Promise((resolve) => {
       const m = $('#modal');
-      m.innerHTML = `<div class="box">${html}<div class="row2">${buttons.map((b, i) => `<button class="btn ${b.cls || ''}" data-i="${i}">${esc(b.label)}</button>`).join('')}</div></div>`;
+      m.innerHTML = `<div class="box ${cls || ''}">${html}<div class="row2">${buttons.map((b, i) => `<button class="btn ${b.cls || ''}" data-i="${i}">${esc(b.label)}</button>`).join('')}</div></div>`;
       m.hidden = false;
       m.onclick = (e) => {
         const b = e.target.closest('[data-i]'); if (!b) return;
@@ -219,6 +219,7 @@
       };
     });
   }
+  const showGuide = (id) => dialog(GUIDES.html(id, esc(EX[id].name)), [{ label: 'Entendido', value: true }], 'guide');
   const confirmBox = (msg, ok = 'Sí') => dialog(`<p>${msg}</p>`, [{ label: 'No', cls: 'secondary', value: false }, { label: ok, value: true }]);
 
   function confetti() {
@@ -286,7 +287,7 @@
     const todayCard = info.doneToday
       ? `<div class="banner ok">✅ <b>¡Hoy completado!</b> ${esc(MESSAGES[(parseInt(today.replace(/-/g, ''), 10) + Object.keys(state.sessions).length) % MESSAGES.length])}</div>`
       : `<div class="card"><h2>${esc(routine.title)}</h2>
-          <ul class="ex-preview">${routine.exercises.map((e) => `<li><span>${esc(e.name)}</span><small>${e.sets}×${esc(e.target)}</small></li>`).join('')}</ul>
+          <ul class="ex-preview">${routine.exercises.map((e) => `<li data-act="guide" data-ex="${e.id}"><span>${esc(e.name)}</span><small>${e.sets}×${esc(e.target)}</small></li>`).join('')}</ul>
           <button class="btn" data-act="start" data-min="0">${state.draft && state.draft.date === today && !state.draft.minimal ? 'Continuar rutina' : 'Empezar rutina'}</button>
           <button class="btn secondary" data-act="start" data-min="1">Hoy solo lo mínimo (5 min)</button>
           ${state.draft && state.draft.date === today ? '' : '<small>El modo mínimo cuenta igual para tu racha.</small>'}</div>`;
@@ -351,7 +352,7 @@
           <input type="number" inputmode="numeric" min="0" placeholder="${ph} ${u}" value="${esc(s.v)}" aria-label="${esc(e.name)} serie ${i + 1} (${u})">
           <button class="check" data-act="check" aria-label="Marcar serie">✓</button></div>`;
       }).join('');
-      return `<div class="card ex-card"><h3><span>${esc(e.name)}</span><span class="target">${e.sets}×${esc(e.target)}</span></h3>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}${sets}</div>`;
+      return `<div class="card ex-card"><h3><span>${esc(e.name)}</span><span class="target">${e.sets}×${esc(e.target)}</span></h3><button class="info-btn" data-act="guide" data-ex="${e.id}">▶ Cómo hacerlo</button>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}${sets}</div>`;
     }).join('');
     return `<div class="top"><button class="x" data-act="back" aria-label="Salir">✕</button><div class="bar"><i id="wbar"></i></div></div>
       <h1>${esc(r.title)}</h1>${cards}
@@ -417,6 +418,8 @@
   function settingsView() {
     const st = state.settings, perm = 'Notification' in window ? Notification.permission : 'no soportado';
     return `<h1>Ajustes</h1>
+      <div class="card"><h2>📖 Guía de ejercicios</h2><p class="muted">Toca uno para ver la animación y cómo hacerlo bien.</p>
+        <div class="guide-list">${GUIDES.ids.map((id) => `<button class="btn-mini" data-act="guide" data-ex="${id}">${esc(EX[id].name)}</button>`).join('')}</div></div>
       <div class="card"><h2>⏰ Recordatorio</h2>
         <div class="row"><label for="s-time">Hora</label><input id="s-time" type="time" value="${esc(st.time)}"></div>
         <div class="row"><label for="s-rest">Descanso entre series</label>
@@ -517,6 +520,7 @@
     const el = e.target.closest('[data-act]'); if (!el) return;
     const act = el.dataset.act;
     switch (act) {
+      case 'guide': showGuide(el.dataset.ex); break;
       case 'start': startWorkout(el.dataset.min === '1'); break;
       case 'back':
         if (await confirmBox('¿Salir? Tu progreso de hoy queda guardado como borrador.', 'Salir')) { ui.view = 'home'; render(); }
