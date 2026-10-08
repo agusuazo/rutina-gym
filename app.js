@@ -581,5 +581,10 @@
 
   /* ---------------------------------- Inicio ---------------------------------- */
   render(); tick(); scheduleChecks();
+  if ('serviceWorker' in navigator) {
+    // Si una versión nueva toma el control, recarga una vez para mostrarla (no si es la primera instalación)
+    const hadController = !!navigator.serviceWorker.controller; let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloaded && ui.view !== 'workout') { reloaded = true; location.reload(); } });
+  }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { /* sin SW (p. ej. file://): la app igual funciona */ });
 })();

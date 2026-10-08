@@ -1,6 +1,6 @@
 /* Service worker: cachea la app para que funcione offline.
-   Estrategia: cache-first con respaldo a red. Sube CACHE al cambiar archivos. */
-const CACHE = 'rutina-v2';
+   Estrategia: red primero, caché de respaldo. Sube CACHE al cambiar archivos. */
+const CACHE = 'rutina-v3';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './guides.js', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon.svg'
@@ -18,19 +18,18 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// Red primero (así las actualizaciones aparecen al abrir la app con internet) y caché como
+// respaldo sin conexión. `no-cache` evita que el caché HTTP de GitHub Pages sirva archivos viejos.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request).then((hit) =>
-      hit || fetch(e.request).then((res) => {
-        // Guarda en caché lo del mismo origen para la próxima vez
-        if (res.ok && new URL(e.request.url).origin === location.origin) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
-        }
-        return res;
-      }).catch(() => (e.request.mode === 'navigate' ? caches.match('./index.html') : undefined))
-    )
+    fetch(e.request, { cache: 'no-cache' }).then((res) => {
+      if (res.ok && new URL(e.request.url).origin === location.origin) {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, copy));
+      }
+      return res;
+    }).catch(() => caches.match(e.request).then((hit) => hit || (e.request.mode === 'navigate' ? caches.match('./index.html') : undefined)))
   );
 });
 
