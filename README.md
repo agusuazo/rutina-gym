@@ -40,6 +40,10 @@ Una PWA sin servidor push **no puede** programar notificaciones fiables en iOS. 
 - Un aviso dentro de la app, al abrirla, si hoy no has entrenado.
 - Una guía paso a paso en **Ajustes** para crear una automatización diaria en **Atajos de iOS**.
 
+## Trayecto
+
+La pestaña **Trayecto** es un camino de 23 lecciones en 4 unidades (de «Primer paso» a «Rutina completa»), con una lección jefe al final de cada unidad. Cada lección es una sesión: la siguiente se desbloquea al completar al menos el 80% de las series. El modo mínimo y las sesiones parciales cuentan para la racha, pero no avanzan el trayecto. Al terminar, se sigue con la rutina A/B. Se puede apagar en Ajustes. La intensidad (RIR) baja de 5 a 2 a lo largo de las unidades.
+
 ## Reglas de la racha
 
 - El día cambia a medianoche en `America/Santiago`; la aritmética de días no depende del horario de verano.

@@ -71,6 +71,74 @@
       hl: ['leg', 'torso'], props: FLOOR,
       A: Object.assign({}, lying, { leg: [[80, 104], [110, 100], [140, 97]] }),
       B: Object.assign({}, lying, { leg: [[80, 104], [80, 74], [80, 44]] })
+    },
+
+    'sent-aire': {
+      hl: ['leg'], props: FLOOR,
+      A: { head: [101, 10], torso: [[100, 19], [100, 49]], arm: [[100, 19], [112, 24], [124, 26]], leg: stand },
+      B: { head: [108, 46], torso: [[103, 55], [86, 80]], arm: [[103, 55], [117, 52], [130, 50]], leg: [[86, 80], [115, 86], [96, 108]] }
+    },
+    'flex-pared': {
+      hl: ['torso', 'arm'], props: '<line class="floor" x1="0" y1="108" x2="200" y2="108"/><line class="floor" x1="140" y1="-22" x2="140" y2="108"/>',
+      A: { head: [110, 24], torso: [[104, 34], [92, 66]], arm: [[104, 34], [120, 32], [136, 30]], leg: [[92, 66], [86, 88], [80, 108]] },
+      B: { head: [128, 30], torso: [[122, 38], [104, 68]], arm: [[122, 38], [126, 46], [136, 30]], leg: [[104, 68], [92, 90], [80, 108]] }
+    },
+    'flex-incl': {
+      vb: '0 24 200 90', hl: ['torso', 'arm'],
+      props: FLOOR + '<g class="prop"><rect x="110" y="83" width="38" height="5" rx="2"/><rect x="113" y="88" width="4" height="20"/><rect x="141" y="88" width="4" height="20"/></g>',
+      A: { head: [134, 44], torso: [[122, 50], [76, 78]], arm: [[122, 50], [124, 66], [126, 82]], leg: [[76, 78], [53, 92], [30, 105]] },
+      B: { head: [134, 66], torso: [[122, 72], [76, 89]], arm: [[122, 72], [108, 80], [126, 82]], leg: [[76, 89], [53, 97], [30, 105]] }
+    },
+    'flex-rod': {
+      vb: '0 30 200 84', hl: ['torso', 'arm'], props: FLOOR,
+      A: { head: [138, 54], torso: [[125, 60], [91, 83]], arm: [[125, 60], [127, 82], [128, 105]], leg: [[91, 83], [58, 105], [38, 92]] },
+      B: { head: [138, 88], torso: [[125, 92], [91, 98]], arm: [[125, 92], [107, 99], [128, 105]], leg: [[91, 98], [58, 105], [38, 94]] }
+    },
+    'plancha-rod': {
+      vb: '0 40 200 76', hl: ['torso'], still: true,
+      props: FLOOR + '<line class="guide" x1="50" y1="99" x2="140" y2="68"/>',
+      A: { head: [138, 76], torso: [[125, 82], [93, 92]], arm: [[125, 82], [125, 104], [150, 104]], leg: [[93, 92], [60, 104], [40, 90]] }
+    },
+    'plancha-lat': {
+      vb: '0 30 200 84', hl: ['torso'], props: FLOOR,
+      A: { head: [50, 76], torso: [[62, 80], [108, 88]], arm: [[62, 80], [62, 104], [84, 104]], leg: [[108, 88], [130, 97], [152, 105]], leg2: [[62, 80], [62, 60], [62, 42]] },
+      B: { head: [50, 76], torso: [[62, 80], [108, 88]], arm: [[62, 80], [62, 104], [84, 104]], leg: [[108, 88], [130, 97], [152, 105]], leg2: [[62, 80], [72, 90], [92, 94]] }
+    },
+    superman: {
+      vb: '0 60 200 54', hl: ['arm', 'leg', 'torso'], props: FLOOR,
+      A: { head: [125, 101], torso: [[110, 104], [70, 104]], arm: [[110, 104], [128, 104], [146, 104]], leg: [[70, 104], [45, 104], [20, 104]] },
+      B: { head: [125, 94], torso: [[110, 104], [70, 104]], arm: [[110, 104], [128, 94], [146, 84]], leg: [[70, 104], [45, 98], [20, 92]] }
+    },
+    'abd-talones': {
+      vb: '0 50 200 64', hl: ['torso'], props: FLOOR,
+      A: Object.assign({}, lying, { leg: [[80, 104], [102, 80], [122, 106]] }),
+      B: { head: [40, 82], torso: [[48, 88], [80, 104]], arm: [[48, 88], [70, 92], [92, 96]], leg: [[80, 104], [102, 80], [122, 106]] }
+    },
+    'peso-muerto': {
+      hl: ['leg', 'torso'], props: FLOOR,
+      A: { head: [101, 10], torso: [[100, 19], [100, 49]], arm: [[100, 19], [104, 36], [106, 53]], leg: stand, load: [106, 60, 6] },
+      B: { head: [126, 44], torso: [[114, 46], [84, 58]], arm: [[114, 46], [114, 66], [114, 86]], leg: [[84, 58], [94, 82], [96, 108]], load: [114, 92, 6] }
+    },
+    'elev-talones': {
+      hl: ['leg'], props: FLOOR,
+      A: { head: [101, 10], torso: [[100, 19], [100, 49]], arm: [[100, 19], [100, 36], [100, 52]], leg: stand },
+      B: { head: [101, 2], torso: [[100, 11], [100, 41]], arm: [[100, 11], [100, 28], [100, 44]], leg: [[100, 41], [98, 71], [96, 100]] }
+    },
+    'puente-peso': {
+      vb: '0 50 200 64', hl: ['leg', 'torso'], props: FLOOR,
+      A: Object.assign({}, lying, { leg: [[80, 104], [102, 80], [122, 106]], load: [80, 97, 6] }),
+      B: Object.assign({}, lying, { torso: [[40, 104], [78, 86]], leg: [[78, 86], [106, 80], [122, 106]], load: [78, 79, 6] })
+    },
+    curl: {
+      hl: ['arm'], props: FLOOR,
+      A: { head: [101, 10], torso: [[100, 19], [100, 49]], arm: [[100, 19], [102, 40], [104, 60]], leg: stand, load: [105, 67, 6] },
+      B: { head: [101, 10], torso: [[100, 19], [100, 49]], arm: [[100, 19], [102, 40], [118, 30]], leg: stand, load: [123, 29, 6] }
+    },
+    bulgara: {
+      hl: ['leg'],
+      props: FLOOR + '<g class="prop"><rect x="30" y="75" width="30" height="5" rx="2"/><rect x="32" y="80" width="4" height="28"/><rect x="54" y="80" width="4" height="28"/></g>',
+      A: { head: [95, 9], torso: [[94, 18], [94, 48]], arm: [[94, 18], [84, 31], [92, 43]], leg: [[94, 48], [108, 78], [116, 108]], leg2: [[94, 48], [72, 64], [52, 73]] },
+      B: { head: [95, 37], torso: [[94, 46], [94, 76]], arm: [[94, 46], [84, 59], [92, 71]], leg: [[94, 76], [120, 78], [116, 108]], leg2: [[94, 76], [74, 88], [52, 73]] }
     }
   };
 
@@ -164,6 +232,124 @@
         'Exhala al subir. Si la espalda baja se despega, detente.'],
       mistakes: ['Zona lumbar que se arquea', 'Bajar rápido', 'Subir con impulso'],
       tip: 'Si te molesta la espalda baja, dobla las rodillas o baja solo hasta la mitad.'
+    },
+
+    'sent-aire': {
+      muscles: 'Piernas · glúteos',
+      steps: ['Pies al ancho de hombros, puntas un poco hacia afuera. Estira los brazos al frente para equilibrarte.',
+        'Baja llevando la cadera hacia atrás, como si te sentaras. Pecho arriba y espalda recta.',
+        'Baja hasta donde puedas con la espalda recta (la meta es llegar a muslos paralelos al suelo).',
+        'Sube empujando con los talones.'],
+      mistakes: ['Rodillas hacia adentro', 'Talones que se despegan', 'Espalda redondeada'],
+      tip: 'Si te cuesta el equilibrio, déjate una silla detrás y toca el asiento con los glúteos sin sentarte del todo.'
+    },
+    'flex-pared': {
+      muscles: 'Pecho · hombros · tríceps',
+      steps: ['De pie frente a una pared, a un paso de distancia. Manos a la altura del pecho, un poco más anchas que los hombros.',
+        'Cuerpo recto de cabeza a talones, abdomen apretado.',
+        'Dobla los codos y acerca el pecho a la pared sin despegar los talones.',
+        'Empuja la pared hasta estirar los brazos.'],
+      mistakes: ['Cadera hacia atrás (cuerpo doblado)', 'Codos muy abiertos', 'Cuello caído'],
+      tip: 'Cuanto más lejos pongas los pies de la pared, más difícil. Cuando te sobren 12 repeticiones, pasa a las inclinadas con silla.'
+    },
+    'flex-incl': {
+      muscles: 'Pecho · hombros · tríceps · core',
+      steps: ['Manos en el borde de una silla firme o mesa (apoyada contra la pared), un poco más anchas que los hombros.',
+        'Cuerpo recto de cabeza a talones, abdomen y glúteos apretados.',
+        'Baja el pecho hacia el borde con los codos a unos 45° del cuerpo.',
+        'Empuja hasta estirar los brazos.'],
+      mistakes: ['Cadera caída', 'Silla que se mueve (usa una estable)', 'Medio recorrido'],
+      tip: 'Más fácil: apoya las manos en una superficie más alta. Más difícil: una más baja, hasta llegar al suelo.'
+    },
+    'flex-rod': {
+      muscles: 'Pecho · hombros · tríceps · core',
+      steps: ['Apoya manos y rodillas (con algo blando bajo las rodillas). Manos un poco más anchas que los hombros.',
+        'Cuerpo recto desde las rodillas hasta la cabeza, abdomen apretado.',
+        'Baja el pecho casi hasta el suelo con los codos a 45°.',
+        'Empuja hasta estirar los brazos sin bloquear los codos.'],
+      mistakes: ['Cadera hacia atrás o muy arriba', 'Codos en «T»', 'Bajar solo un poco'],
+      tip: 'Cuando hagas 10 buenas seguidas, prueba las flexiones normales de a pocas.'
+    },
+    'plancha-rod': {
+      muscles: 'Abdomen · core · hombros',
+      steps: ['Antebrazos en el suelo, codos bajo los hombros, rodillas apoyadas.',
+        'Cuerpo en línea recta de rodillas a cabeza (sigue la línea punteada). Mirada al suelo.',
+        'Aprieta abdomen y glúteos. Respira normal.',
+        'Anota los segundos que aguantaste con buena postura.'],
+      mistakes: ['Cadera caída', 'Cadera muy arriba', 'Aguantar la respiración'],
+      tip: 'Cuando aguantes 30 seg con facilidad, prueba la plancha completa.'
+    },
+    'plancha-lat': {
+      muscles: 'Oblicuos · core · hombros',
+      steps: ['De lado, apoyado en el antebrazo con el codo bajo el hombro. Pies uno sobre otro (o uno delante del otro, más fácil).',
+        'Levanta la cadera hasta formar una línea recta de cabeza a pies. El otro brazo apunta al techo.',
+        'Gira el tronco pasando ese brazo por debajo del cuerpo, sin dejar caer la cadera.',
+        'Vuelve arriba. Haz todas las repeticiones de un lado y luego del otro.'],
+      mistakes: ['Cadera caída', 'Girar demasiado rápido', 'Hombro encogido hacia la oreja'],
+      tip: 'Si es muy difícil, apoya la rodilla de abajo en el suelo.'
+    },
+    superman: {
+      muscles: 'Espalda baja y alta · glúteos',
+      steps: ['Boca abajo, brazos estirados al frente y piernas estiradas.',
+        'Levanta a la vez un brazo y la pierna contraria unos centímetros. Mirada al suelo.',
+        'Mantén 1 seg apretando espalda y glúteos.',
+        'Baja con control y alterna de lado.'],
+      mistakes: ['Levantar el cuello y mirar al frente', 'Subir con impulso', 'Subir demasiado y arquear la espalda baja'],
+      tip: 'No necesitas subir mucho: lo importante es apretar y controlar.'
+    },
+    'abd-talones': {
+      muscles: 'Abdomen · oblicuos',
+      steps: ['Boca arriba, rodillas dobladas y pies apoyados. Brazos a los costados.',
+        'Levanta los hombros del suelo y estira las manos hacia los talones, primero un lado y luego el otro.',
+        'Aprieta el abdomen arriba, sin tirar del cuello.',
+        'Baja lento. Cada vez que toques un talón cuenta como repetición.'],
+      mistakes: ['Tirar del cuello con las manos', 'Subir con impulso', 'Despegar los pies del suelo'],
+      tip: 'Mira al techo y piensa en acercar las costillas a la cadera.'
+    },
+    'peso-muerto': {
+      muscles: 'Glúteos · isquiotibiales · espalda baja',
+      steps: ['De pie, mochila cargada con ambas manos delante de los muslos. Rodillas un poco dobladas.',
+        'Lleva la cadera hacia atrás (como cerrando una puerta con el trasero) y baja la mochila pegada a las piernas.',
+        'Baja hasta sentir el tirón atrás de los muslos, con la espalda siempre recta.',
+        'Sube empujando la cadera hacia adelante y aprieta los glúteos.'],
+      mistakes: ['Espalda redondeada', 'Doblar demasiado las rodillas (es una sentadilla)', 'Mochila lejos del cuerpo'],
+      tip: 'Mira un punto en el suelo unos metros adelante, así mantienes el cuello alineado.'
+    },
+    'elev-talones': {
+      muscles: 'Pantorrillas',
+      steps: ['De pie, pies al ancho de caderas. Puedes apoyar una mano en la pared para equilibrarte.',
+        'Sube lo más alto posible sobre la punta de los pies.',
+        'Mantén 1 seg arriba.',
+        'Baja lento hasta que los talones toquen el suelo.'],
+      mistakes: ['Rebotar sin control', 'Tobillos que se doblan hacia afuera', 'Recorrido corto'],
+      tip: 'Para más dificultad, hazlas con una sola pierna o con la mochila.'
+    },
+    'puente-peso': {
+      muscles: 'Glúteos · isquiotibiales',
+      steps: ['Boca arriba, rodillas dobladas, pies al ancho de caderas. Apoya la mochila sobre la cadera sujetándola con las manos.',
+        'Empuja con los talones y sube la cadera hasta formar una línea recta de hombros a rodillas.',
+        'Aprieta los glúteos 1-2 seg arriba.',
+        'Baja lento sin apoyar del todo la cadera.'],
+      mistakes: ['Arquear la zona lumbar', 'Empujar con las puntas de los pies', 'Rodillas hacia adentro o afuera'],
+      tip: 'Para más intensidad apoya la parte alta de la espalda en el sofá (hip thrust).'
+    },
+    curl: {
+      muscles: 'Bíceps · antebrazos',
+      steps: ['De pie, mochila colgando de una mano (por el asa) con el brazo estirado. Codo pegado al costado.',
+        'Sube la mochila doblando el codo, sin mover el hombro.',
+        'Aprieta el bíceps arriba 1 seg.',
+        'Baja lento hasta estirar el brazo. Haz el otro lado.'],
+      mistakes: ['Balancear el cuerpo para subir', 'Codo que se va hacia adelante', 'Bajar de golpe'],
+      tip: 'Si la mochila es liviana, sube y baja más lento: el control hace el trabajo.'
+    },
+    bulgara: {
+      muscles: 'Cuádriceps · glúteos · equilibrio',
+      steps: ['De espaldas a una silla firme, apoya el empeine de un pie sobre el asiento. El pie de adelante a un paso largo.',
+        'Torso erguido. Baja doblando la rodilla de adelante hasta unos 90°.',
+        'La rodilla de adelante queda sobre el tobillo, sin irse hacia adentro.',
+        'Sube empujando con el talón de adelante. Haz todas las repeticiones y cambia de pierna.'],
+      mistakes: ['Pie delantero demasiado cerca de la silla', 'Torso muy inclinado', 'Apoyar el peso en la pierna de atrás'],
+      tip: 'Si te cuesta el equilibrio, apóyate con una mano en la pared.'
     }
   };
 

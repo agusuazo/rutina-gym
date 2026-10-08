@@ -61,7 +61,7 @@
   const EX = {};
   [ROUTINES.A, ROUTINES.B].forEach((r) => r.exercises.forEach((e) => { EX[e.id] = e; }));
 
-  const defaultSettings = () => ({ time: '20:00', notify: false, rest: 75 });
+  const defaultSettings = () => ({ time: '20:00', notify: false, rest: 75, path: true });
   function defaultState(today) {
     return { v: 1, startDate: today, sessions: {}, freezes: {}, draft: null, settings: defaultSettings(), lastNotified: null };
   }
@@ -156,11 +156,99 @@
     return null;
   }
 
+  /* ------------------------------ Trayecto ------------------------------ */
+  // Ejercicios extra del trayecto (los de las rutinas A/B ya están en EX).
+  [
+    { id: 'sent-aire', name: 'Sentadilla sin peso' },
+    { id: 'flex-pared', name: 'Flexiones en la pared' },
+    { id: 'flex-incl', name: 'Flexiones inclinadas (manos en silla o mesa)' },
+    { id: 'flex-rod', name: 'Flexiones con rodillas apoyadas' },
+    { id: 'plancha-rod', name: 'Plancha con rodillas apoyadas', unit: 'seg' },
+    { id: 'plancha-lat', name: 'Plancha lateral + rotación' },
+    { id: 'superman', name: 'Superman alternado' },
+    { id: 'abd-talones', name: 'Abdominal tocando talones' },
+    { id: 'peso-muerto', name: 'Peso muerto con mochila' },
+    { id: 'elev-talones', name: 'Elevación de talones' },
+    { id: 'puente-peso', name: 'Puente de glúteos con mochila' },
+    { id: 'curl', name: 'Curl de bíceps con mochila' },
+    { id: 'bulgara', name: 'Sentadilla búlgara' }
+  ].forEach((e) => { EX[e.id] = e; });
+
+  /** "flexiones:3x8" = 3 series de 8. Sufijo: s = segundos, p = por pierna, l = por lado. */
+  function parseEx(spec) {
+    const m = /^([\w-]+):(\d+)x(\d+)([spl]?)$/.exec(spec);
+    if (!m || !EX[m[1]]) throw new Error('Ejercicio mal definido: ' + spec);
+    const suffix = { s: ' seg', p: ' por pierna', l: ' por lado', '': '' }[m[4]];
+    return Object.assign({}, EX[m[1]], { sets: +m[2], target: m[3] + suffix, def: +m[3], unit: m[4] === 's' ? 'seg' : EX[m[1]].unit });
+  }
+
+  // Cuatro unidades: de cero hasta la rutina completa. `rir` = repeticiones en reserva
+  // (bajan con el tiempo: 5 → 2). Cada unidad termina con una lección "jefe".
+  // Con 2 sesiones/semana al inicio y 3 desde la semana 4, el trayecto dura ~8-9 semanas.
+  const UNITS_RAW = [
+    { title: 'Primer paso', sub: 'Mueve el cuerpo sin miedo', rir: 5, lessons: [
+      ['Despierta el cuerpo', 10, 'sent-aire:2x10', 'flex-pared:2x8', 'plancha-rod:2x15s', 'puente:2x10'],
+      ['Segundo round', 12, 'sent-aire:2x12', 'flex-pared:2x10', 'superman:2x10', 'plancha-rod:2x20s'],
+      ['Mochila ligera', 15, 'sentadilla:2x10', 'flex-incl:2x6', 'remo:2x10', 'puente:2x12'],
+      ['Un poco más', 16, 'sentadilla:2x12', 'flex-incl:2x8', 'remo:2x10', 'superman:2x12', 'plancha-rod:2x25s'],
+      ['Tres series', 18, 'sentadilla:3x10', 'flex-incl:3x8', 'remo:3x10', 'puente:3x12', 'plancha-rod:2x30s'],
+      ['Jefe: Unidad 1', 20, 'sentadilla:3x12', 'flex-incl:3x10', 'remo:3x10', 'superman:3x12', 'plancha-rod:3x30s']
+    ] },
+    { title: 'Construyendo base', sub: 'Más series y nuevos ejercicios', rir: 4, lessons: [
+      ['Flexiones de rodillas', 18, 'flex-rod:3x6', 'sentadilla:3x12', 'remo:3x10', 'press:2x8', 'plancha-rod:3x25s'],
+      ['Primeras zancadas', 20, 'flex-rod:3x8', 'zancadas:2x6p', 'remo:3x12', 'press:3x8', 'plancha:3x15s'],
+      ['Bisagra de cadera', 22, 'flex-rod:3x10', 'zancadas:3x6p', 'peso-muerto:3x10', 'press:3x10', 'plancha:3x20s'],
+      ['Flexiones de verdad', 22, 'flexiones:3x4', 'sentadilla:3x15', 'remo:3x12', 'abd-talones:3x12', 'plancha:3x25s'],
+      ['Ganando ritmo', 24, 'flexiones:3x6', 'zancadas:3x8p', 'peso-muerto:3x12', 'press:3x10', 'superman:3x12'],
+      ['Jefe: Unidad 2', 25, 'flexiones:3x8', 'sentadilla:3x15', 'remo:3x12', 'press:3x12', 'plancha:3x30s']
+    ] },
+    { title: 'Fuerza', sub: 'Hombros, espalda y pecho', rir: 3, lessons: [
+      ['Más fuerza', 25, 'flexiones:3x8', 'fondos:3x8', 'remo:3x12', 'puente-peso:3x12', 'plancha:3x25s'],
+      ['Tu primera dominada', 26, 'flexiones:3x10', 'zancadas:3x8p', 'remo-inv:3x4', 'elev-talones:3x15', 'abd-talones:3x15'],
+      ['Brazos y cadera', 28, 'fondos:3x10', 'peso-muerto:3x12', 'curl:3x12', 'press:3x12', 'plancha-lat:3x8l'],
+      ['Una pierna a la vez', 30, 'flexiones:3x12', 'bulgara:3x6p', 'remo-inv:3x5', 'puente-peso:3x15', 'superman:3x15'],
+      ['Casi completo', 30, 'flexiones:3x12', 'fondos:3x12', 'remo:3x15', 'zancadas:3x10p', 'plancha:3x35s'],
+      ['Jefe: Unidad 3', 32, 'flexiones:3x12', 'sentadilla:3x15', 'remo-inv:3x6', 'press:3x12', 'plancha-lat:3x10l']
+    ] },
+    { title: 'Rutina completa', sub: 'Full body 3 días a la semana', rir: 2, lessons: [
+      ['Día A completo', 35, 'flexiones:3x10', 'sentadilla:3x15', 'remo:3x12', 'press:3x12', 'plancha:3x40s'],
+      ['Día B completo', 35, 'fondos:3x12', 'zancadas:3x10p', 'remo-inv:3x6', 'puente-peso:3x15', 'elev-piernas:3x12'],
+      ['Día A+', 40, 'flexiones:4x10', 'bulgara:3x8p', 'remo:4x12', 'press:3x12', 'plancha-lat:3x10l'],
+      ['Día B+', 40, 'fondos:4x12', 'peso-muerto:4x12', 'remo-inv:4x6', 'curl:3x12', 'elev-piernas:3x15'],
+      ['Jefe: Unidad 4', 45, 'flexiones:4x12', 'bulgara:3x10p', 'remo-inv:4x8', 'press:4x12', 'plancha:3x45s']
+    ] }
+  ];
+  const UNITS = UNITS_RAW.map((u, ui) => ({
+    n: ui + 1, title: u.title, sub: u.sub, rir: u.rir,
+    lessons: u.lessons.map((l, i) => ({
+      id: `${ui + 1}.${i + 1}`, unit: ui + 1, title: l[0], minutes: l[1], boss: i === u.lessons.length - 1, exercises: l.slice(2).map(parseEx)
+    }))
+  }));
+  const LESSONS = UNITS.reduce((a, u) => a.concat(u.lessons), []);
+  const LESSON_BY_ID = {};
+  LESSONS.forEach((l) => { LESSON_BY_ID[l.id] = l; });
+
+  /** Lecciones superadas: sesión completa de esa lección (ni parcial ni modo mínimo). */
+  function completedLessons(st) {
+    const done = new Set();
+    for (const k in st.sessions) { const s = st.sessions[k]; if (s.lesson && !s.partial && !s.minimal) done.add(s.lesson); }
+    return done;
+  }
+  const nextLesson = (st) => { const d = completedLessons(st); return LESSONS.find((l) => !d.has(l.id)) || null; };
+  /** Qué toca hoy: la siguiente lección del trayecto, o A/B si está apagado o ya lo terminaste. */
+  function todayPlan(st) {
+    const l = st.settings.path !== false ? nextLesson(st) : null;
+    return l ? { type: 'P', lesson: l.id } : { type: nextType(st) };
+  }
+  /** Rutina ({title, exercises}) para {minimal, type, lesson}. */
+  const routineFor = (o) => (o.minimal ? MINIMAL : o.lesson ? LESSON_BY_ID[o.lesson] : ROUTINES[o.type]);
+
   const Logic = {
     TZ, MAX_FREEZES, ROUTINES, MINIMAL, EX, defaultState, defaultSettings,
     dayKey, hmNow, addDays, diffDays, weekStart, daysInMonth, dowMon0,
     covered, streakEndingAt, bestStreak, freezesUsed, freezesLeft, canFreeze, streakInfo,
-    weekNumber, weekGoal, weekStats, sessionReps, nextType, lastReps
+    weekNumber, weekGoal, weekStats, sessionReps, nextType, lastReps,
+    UNITS, LESSONS, LESSON_BY_ID, parseEx, completedLessons, nextLesson, todayPlan, routineFor
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Logic;
   if (typeof document === 'undefined') return;     // en Node termina aquí
@@ -269,8 +357,7 @@
     const today = ui.today, info = streakInfo(state, today), y = addDays(today, -1);
     const ws = weekStart(today), wk = weekStats(state, ws), goal = weekGoal(state, ws);
     const left = freezesLeft(state, today.slice(0, 7));
-    const type = state.sessions[today] ? state.sessions[today].type : nextType(state);
-    const routine = ROUTINES[type];
+    const plan = todayPlan(state), routine = routineFor(plan), lesson = plan.lesson ? LESSON_BY_ID[plan.lesson] : null;
     const frac = Math.min(1, wk.sessions / goal), C = 2 * Math.PI * 40;
 
     let banners = '';
@@ -286,9 +373,9 @@
 
     const todayCard = info.doneToday
       ? `<div class="banner ok">✅ <b>¡Hoy completado!</b> ${esc(MESSAGES[(parseInt(today.replace(/-/g, ''), 10) + Object.keys(state.sessions).length) % MESSAGES.length])}</div>`
-      : `<div class="card"><h2>${esc(routine.title)}</h2>
+      : `<div class="card">${lesson ? `<small>LECCIÓN ${lesson.id} · UNIDAD ${lesson.unit} · ~${lesson.minutes} min</small>` : ''}<h2>${esc(routine.title)}</h2>
           <ul class="ex-preview">${routine.exercises.map((e) => `<li data-act="guide" data-ex="${e.id}"><span>${esc(e.name)}</span><small>${e.sets}×${esc(e.target)}</small></li>`).join('')}</ul>
-          <button class="btn" data-act="start" data-min="0">${state.draft && state.draft.date === today && !state.draft.minimal ? 'Continuar rutina' : 'Empezar rutina'}</button>
+          <button class="btn" data-act="start" data-min="0">${state.draft && state.draft.date === today && !state.draft.minimal ? 'Continuar' : lesson ? 'Empezar lección' : 'Empezar rutina'}</button>
           <button class="btn secondary" data-act="start" data-min="1">Hoy solo lo mínimo (5 min)</button>
           ${state.draft && state.draft.date === today ? '' : '<small>El modo mínimo cuenta igual para tu racha.</small>'}</div>`;
 
@@ -332,22 +419,25 @@
   /* --------------------------- Vistas: Entrenamiento --------------------------- */
   function startWorkout(minimal) {
     const today = ui.today;
-    if (!state.draft || state.draft.date !== today || state.draft.minimal !== minimal) {
-      const type = minimal ? 'A' : nextType(state), r = minimal ? MINIMAL : ROUTINES[type], sets = {};
+    const wanted = minimal ? null : todayPlan(state);
+    if (!state.draft || state.draft.date !== today || state.draft.minimal !== minimal || (wanted && (state.draft.lesson || null) !== (wanted.lesson || null))) {
+      const plan = minimal ? { type: 'A' } : todayPlan(state), r = routineFor({ minimal, type: plan.type, lesson: plan.lesson }), sets = {};
       r.exercises.forEach((e) => { sets[e.id] = Array.from({ length: e.sets }, () => ({ v: '', d: false })); });
-      state.draft = { date: today, type, minimal, sets };
+      state.draft = { date: today, type: plan.type, lesson: plan.lesson || null, minimal, sets };
       save();
     }
     ui.view = 'workout'; render();
   }
 
   function workoutView() {
-    const dr = state.draft, r = dr.minimal ? MINIMAL : ROUTINES[dr.type];
+    const dr = state.draft, r = routineFor(dr), lesson = dr.lesson ? LESSON_BY_ID[dr.lesson] : null;
+    const rir = lesson ? UNITS[lesson.unit - 1].rir : null;
     const cards = r.exercises.map((e) => {
       const last = dr.minimal ? null : lastReps(state, e.id), u = e.unit || 'reps';
-      const hint = last ? `Última vez: ${last.map((n) => (n == null ? '–' : n)).join(' · ')} ${u} → hoy intenta superarlo por +1` : (dr.minimal ? '' : 'Primera vez: anota tus repeticiones para tener un punto de partida.');
+      const lastTxt = last ? `Última vez: ${last.map((n) => (n == null ? '–' : n)).join(' · ')} ${u}` : '';
+      const hint = lesson ? lastTxt : last ? `${lastTxt} → hoy intenta superarlo por +1` : (dr.minimal ? '' : 'Primera vez: anota tus repeticiones para tener un punto de partida.');
       const sets = dr.sets[e.id].map((s, i) => {
-        const ph = last && typeof last[i] === 'number' ? last[i] + 1 : e.def;
+        const ph = !lesson && last && typeof last[i] === 'number' ? last[i] + 1 : e.def;   // en lecciones la meta es la de la lección
         return `<div class="set ${s.d ? 'done' : ''}" data-ex="${e.id}" data-i="${i}"><label>Serie ${i + 1}</label>
           <input type="number" inputmode="numeric" min="0" placeholder="${ph} ${u}" value="${esc(s.v)}" aria-label="${esc(e.name)} serie ${i + 1} (${u})">
           <button class="check" data-act="check" aria-label="Marcar serie">✓</button></div>`;
@@ -355,7 +445,8 @@
       return `<div class="card ex-card"><h3><span>${esc(e.name)}</span><span class="target">${e.sets}×${esc(e.target)}</span></h3><button class="info-btn" data-act="guide" data-ex="${e.id}">▶ Cómo hacerlo</button>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}${sets}</div>`;
     }).join('');
     return `<div class="top"><button class="x" data-act="back" aria-label="Salir">✕</button><div class="bar"><i id="wbar"></i></div></div>
-      <h1>${esc(r.title)}</h1>${cards}
+      <h1>${esc(lesson ? `Lección ${lesson.id} · ${r.title}` : r.title)}</h1>
+      ${rir ? `<div class="banner info">💡 <b>Intensidad RIR ${rir}:</b> termina cada serie sintiendo que podrías hacer unas ${rir} repeticiones más. La primera serie de cada ejercicio puede ser más suave (aproximación). Si una serie te cuesta mucho menos o mucho más, ajusta la carga de la mochila.</div>` : ''}${cards}
       <button class="btn" id="finish" data-act="finish">Terminar sesión</button>`;
   }
 
@@ -369,20 +460,64 @@
 
   async function finishWorkout() {
     const dr = state.draft, all = Object.values(dr.sets).flat(), done = all.filter((s) => s.d).length;
-    if (done < all.length && !(await confirmBox(`Te faltan ${all.length - done} series. ¿Guardar la sesión igual?`, 'Guardar'))) return;
+    const routine = routineFor(dr), partial = !!dr.lesson && done < Math.ceil(all.length * 0.8);
+    if (done < all.length && !(await confirmBox(`Te faltan ${all.length - done} series. ¿Guardar la sesión igual?${dr.lesson ? ' La racha cuenta; la lección se supera con al menos el 80% de las series.' : ''}`, 'Guardar'))) return;
     const ex = {};
     for (const id in dr.sets) {
-      ex[id] = dr.sets[id].map((s) => (s.d ? (s.v !== '' ? Math.max(0, Number(s.v)) : EX[id].def) : null));
+      const def = routine.exercises.find((e) => e.id === id).def;
+      ex[id] = dr.sets[id].map((s) => (s.d ? (s.v !== '' ? Math.max(0, Number(s.v)) : def) : null));
     }
     const today = dr.date;
     state.sessions[today] = { type: dr.type, minimal: dr.minimal, ex };
+    if (dr.lesson) { state.sessions[today].lesson = dr.lesson; if (partial) state.sessions[today].partial = true; }
     state.draft = null; save(); stopRest();
     ui.view = 'home'; ui.today = today; ui.cal = today.slice(0, 7);
     const info = streakInfo(state, today);
-    const msg = dr.minimal ? 'Los 5 minutos también cuentan. ¡Eso es constancia! 💚' : MESSAGES[Object.keys(state.sessions).length % MESSAGES.length];
+    let msg = dr.minimal ? 'Los 5 minutos también cuentan. ¡Eso es constancia! 💚' : MESSAGES[Object.keys(state.sessions).length % MESSAGES.length];
+    let lessonMsg = '';
+    if (dr.lesson) {
+      const l = LESSON_BY_ID[dr.lesson], nx = nextLesson(state);
+      if (partial) lessonMsg = `La lección ${l.id} sigue pendiente (te faltaron series), pero tu racha cuenta. ¡Mañana la terminas!`;
+      else lessonMsg = (l.boss ? `🏆 ¡Unidad ${l.unit} completada! ` : `✅ Lección ${l.id} completada. `) + (nx ? `Siguiente: «${nx.title}».` : '¡Terminaste todo el trayecto! Ahora sigues con la rutina A/B 💪');
+    }
     render(); confetti();
     const f = $('#flame'); if (f) f.classList.add('pop');
-    await dialog(`<div class="big">🔥</div><h1>${info.streak} ${info.streak === 1 ? 'día' : 'días'} de racha</h1><p>${esc(msg)}</p>`, [{ label: 'Continuar', value: true }]);
+    await dialog(`<div class="big">🔥</div><h1>${info.streak} ${info.streak === 1 ? 'día' : 'días'} de racha</h1><p>${esc(msg)}</p>${lessonMsg ? `<p><b>${esc(lessonMsg)}</b></p>` : ''}`, [{ label: 'Continuar', value: true }]);
+  }
+
+  /* ---------------------------- Vistas: Trayecto ---------------------------- */
+  const NODE_OFFSETS = [0, 38, 60, 38, 0, -38, -60, -38];   // zigzag horizontal (px) como en Duolingo
+  function pathView() {
+    const done = completedLessons(state), next = nextLesson(state);
+    let i = 0, html = '<h1>Tu trayecto</h1>';
+    if (state.settings.path === false) html += '<div class="banner info">El trayecto está apagado en Ajustes: hoy se alterna la rutina A/B.</div>';
+    UNITS.forEach((u) => {
+      const cnt = u.lessons.filter((l) => done.has(l.id)).length;
+      html += `<section class="unit"><div class="unit-head"><div><small>UNIDAD ${u.n}</small><h2>${esc(u.title)}</h2><span>${esc(u.sub)}</span></div><b class="unit-count">${cnt}/${u.lessons.length}</b></div><div class="nodes">`;
+      u.lessons.forEach((l) => {
+        const st = done.has(l.id) ? 'done' : next && next.id === l.id ? 'current' : 'locked';
+        const icon = st === 'done' ? '✓' : st === 'locked' ? '🔒' : l.boss ? '🏆' : '💪';
+        html += `<div class="node-wrap" style="transform:translateX(${NODE_OFFSETS[i++ % NODE_OFFSETS.length]}px)">
+          ${st === 'current' ? '<div class="bubble">¡EMPIEZA!</div>' : ''}
+          <button class="node ${st} ${l.boss ? 'boss' : ''}" data-act="lesson" data-id="${l.id}" aria-label="Lección ${l.id}: ${esc(l.title)}">${icon}</button>
+          <div class="node-label">${esc(l.title)}</div></div>`;
+      });
+      html += '</div></section>';
+    });
+    if (!next) html += '<div class="banner ok">🎉 <b>¡Completaste el trayecto!</b> Desde ahora entrenas con la rutina completa A/B y subes +1 repetición cuando puedas.</div>';
+    return html;
+  }
+  /** Detalle de una lección al tocar su nodo. */
+  async function showLesson(id) {
+    const l = LESSON_BY_ID[id], done = completedLessons(state), next = nextLesson(state);
+    if (!done.has(id) && !(next && next.id === id)) { toast('🔒 Completa primero la lección anterior'); return; }
+    const isNext = next && next.id === id, doneToday = !!state.sessions[ui.today];
+    const body = `<small>LECCIÓN ${l.id} · UNIDAD ${l.unit}</small><h2>${esc(l.title)}</h2>
+      <p class="muted">~${l.minutes} min · RIR ${UNITS[l.unit - 1].rir}${done.has(id) ? ' · ✓ completada' : ''}</p>
+      <ul class="ex-preview">${l.exercises.map((e) => `<li><span>${esc(e.name)}</span><small>${e.sets}×${esc(e.target)}</small></li>`).join('')}</ul>
+      ${isNext && doneToday ? '<p class="muted">Hoy ya entrenaste. Esta lección te espera mañana 🙂</p>' : ''}`;
+    const go = await dialog(body, isNext && !doneToday ? [{ label: 'Cerrar', cls: 'secondary', value: false }, { label: 'Empezar', value: true }] : [{ label: 'Cerrar', value: false }], 'guide');
+    if (go) startWorkout(false);
   }
 
   /* ---------------------------- Vistas: Progreso ---------------------------- */
@@ -422,6 +557,7 @@
         <div class="guide-list">${GUIDES.ids.map((id) => `<button class="btn-mini" data-act="guide" data-ex="${id}">${esc(EX[id].name)}</button>`).join('')}</div></div>
       <div class="card"><h2>⏰ Recordatorio</h2>
         <div class="row"><label for="s-time">Hora</label><input id="s-time" type="time" value="${esc(st.time)}"></div>
+        <div class="row"><label for="s-path">Usar el trayecto (lecciones que suben de nivel)</label><input id="s-path" type="checkbox" ${st.path !== false ? 'checked' : ''}></div>
         <div class="row"><label for="s-rest">Descanso entre series</label>
           <select id="s-rest">${[60, 75, 90].map((n) => `<option value="${n}" ${st.rest === n ? 'selected' : ''}>${n} seg</option>`).join('')}</select></div>
         <button class="btn blue" data-act="notify">${st.notify && perm === 'granted' ? 'Notificaciones activadas ✓' : 'Activar notificaciones'}</button>
@@ -504,10 +640,11 @@
     if (state.draft && state.draft.date !== ui.today && ui.view !== 'workout') { state.draft = null; save(); }
     const v = ui.view;
     document.body.classList.toggle('in-workout', v === 'workout');
-    appEl.innerHTML = v === 'workout' ? workoutView() : v === 'progress' ? progressView() : v === 'settings' ? settingsView() : homeView();
+    appEl.innerHTML = v === 'workout' ? workoutView() : v === 'path' ? pathView() : v === 'progress' ? progressView() : v === 'settings' ? settingsView() : homeView();
     document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === v));
     if (v === 'workout') refreshWorkoutProgress(); else if (!$('#rest').hidden) stopRest();
-    window.scrollTo(0, 0);
+    if (v === 'path') requestAnimationFrame(() => { const c = $('.node.current'); if (c) c.scrollIntoView({ block: 'center' }); });
+    else window.scrollTo(0, 0);
   }
 
   /* --------------------------------- Eventos --------------------------------- */
@@ -521,6 +658,7 @@
     const act = el.dataset.act;
     switch (act) {
       case 'guide': showGuide(el.dataset.ex); break;
+      case 'lesson': showLesson(el.dataset.id); break;
       case 'start': startWorkout(el.dataset.min === '1'); break;
       case 'back':
         if (await confirmBox('¿Salir? Tu progreso de hoy queda guardado como borrador.', 'Salir')) { ui.view = 'home'; render(); }
@@ -529,7 +667,9 @@
         const row = el.closest('.set'), s = state.draft.sets[row.dataset.ex][row.dataset.i];
         s.d = !s.d; row.classList.toggle('done', s.d); save(); refreshWorkoutProgress();
         const all = Object.values(state.draft.sets).flat();
-        if (s.d && !all.every((x) => x.d)) startRest(state.settings.rest); else stopRest();
+        // 1 min entre series; el doble al terminar un ejercicio (como en la rutina del curso: micropausa y macropausa)
+        const lastOfEx = Number(row.dataset.i) === state.draft.sets[row.dataset.ex].length - 1;
+        if (s.d && !all.every((x) => x.d)) startRest(state.settings.rest * (lastOfEx ? 2 : 1)); else stopRest();
         if (s.d && navigator.vibrate) navigator.vibrate(30);
         break;
       }
@@ -571,6 +711,7 @@
     if (inp.matches('.set input') && state.draft) {            // anota repeticiones sin re-renderizar
       const row = inp.closest('.set'); state.draft.sets[row.dataset.ex][row.dataset.i].v = inp.value; save();
     } else if (inp.id === 's-time') { state.settings.time = inp.value || '20:00'; state.lastNotified = null; save(); }
+    else if (inp.id === 's-path') { state.settings.path = inp.checked; save(); }
     else if (inp.id === 's-rest') { state.settings.rest = Number(inp.value); save(); }
   });
   document.addEventListener('change', (e) => {

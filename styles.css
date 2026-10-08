@@ -171,3 +171,24 @@ ul.steps.bad li::before { content: "✗ "; color: var(--red); font-weight: 900; 
 .ex-preview li[data-act] { cursor: pointer; }
 .ex-preview li[data-act] > span::after { content: " ⓘ"; color: var(--blue); }
 .guide-list { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Trayecto (estilo Duolingo) */
+.unit { margin-bottom: 28px; }
+.unit-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--green); color: #0b1a00;
+  border-radius: 16px; padding: 12px 16px; box-shadow: 0 4px 0 var(--green-d); }
+.unit-head h2 { margin: 2px 0; } .unit-head small { font-weight: 800; letter-spacing: .08em; opacity: .75; } .unit-head span { font-size: .85rem; font-weight: 600; }
+.unit-count { background: rgba(0,0,0,.18); border-radius: 999px; padding: 6px 12px; }
+.nodes { display: flex; flex-direction: column; align-items: center; padding: 20px 0 0; }
+.node-wrap { display: flex; flex-direction: column; align-items: center; margin-bottom: 18px; position: relative; }
+.node { width: 76px; height: 76px; border-radius: 50%; border: 0; font-size: 1.9rem; font-weight: 900; cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; justify-content: center; }
+.node.done { background: var(--green); color: #0b1a00; box-shadow: 0 6px 0 var(--green-d); }
+.node.current { background: var(--orange); box-shadow: 0 6px 0 #b86d00, 0 0 0 6px rgba(255,150,0,.25); animation: pulse 1.8s ease-in-out infinite; }
+.node.locked { background: var(--line); color: var(--muted); box-shadow: 0 6px 0 #2a363e; }
+.node.boss { width: 88px; height: 88px; font-size: 2.2rem; }
+.node.boss.done { background: #ffd900; box-shadow: 0 6px 0 #b39800; }
+.node:active { transform: translateY(4px); }
+.node-label { margin-top: 10px; font-size: .8rem; font-weight: 700; color: var(--muted); max-width: 150px; text-align: center; }
+.bubble { position: absolute; top: -30px; background: var(--text); color: var(--bg); font-weight: 900; font-size: .75rem; padding: 4px 10px; border-radius: 10px; white-space: nowrap; }
+.bubble::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; background: var(--text); transform: translateX(-50%) rotate(45deg); }
+.node-wrap:has(.bubble) { margin-top: 26px; }

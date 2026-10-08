@@ -158,4 +158,62 @@ t('récord histórico se conserva tras romperse la racha', () => {
   const i = L.streakInfo(st, '2026-10-30'); assert.strictEqual(i.streak, 1); assert.strictEqual(i.best, 5);
 });
 
+console.log('Trayecto');
+require('./guides.js');
+const lessonSession = (id, extra) => Object.assign({ type: 'P', lesson: id, minimal: false, ex: {} }, extra || {});
+t('23 lecciones, ids únicos, 4 unidades con jefe al final y ejercicios bien formados', () => {
+  assert.strictEqual(L.LESSONS.length, 23);
+  assert.strictEqual(new Set(L.LESSONS.map((l) => l.id)).size, 23);
+  assert.strictEqual(L.UNITS.length, 4);
+  L.UNITS.forEach((u) => { assert.ok(u.lessons[u.lessons.length - 1].boss); assert.strictEqual(u.lessons.filter((l) => l.boss).length, 1); });
+  L.LESSONS.forEach((l) => l.exercises.forEach((e) => { assert.ok(e.sets >= 1 && e.def >= 1 && e.name && e.target, l.id + ' ' + e.id); }));
+});
+t('todo ejercicio usado (y de las rutinas A/B) tiene figura animada e instrucciones', () => {
+  Object.keys(L.EX).forEach((id) => {
+    assert.ok(GUIDES.ids.includes(id), 'sin figura: ' + id);
+    assert.ok(GUIDES.html(id, 'x').includes('Cómo hacerlo'), 'sin texto: ' + id);
+    assert.ok(GUIDES.figure(id).includes('<animate') || ['plancha', 'plancha-rod'].includes(id), 'sin animación: ' + id);
+  });
+});
+t('la dificultad sube: más series/minutos y menos RIR a lo largo de las unidades', () => {
+  const mins = L.UNITS.map((u) => u.lessons[u.lessons.length - 1].minutes);
+  assert.deepStrictEqual(mins.slice().sort((a, b) => a - b), mins);
+  assert.deepStrictEqual(L.UNITS.map((u) => u.rir), [5, 4, 3, 2]);
+  assert.ok(L.LESSONS[0].minutes <= 15 && L.LESSONS[0].exercises.every((e) => e.sets <= 2));   // arranque suave desde cero
+});
+t('parseEx entiende segundos, por pierna y por lado', () => {
+  assert.deepStrictEqual([L.parseEx('plancha:3x20s').target, L.parseEx('plancha:3x20s').unit], ['20 seg', 'seg']);
+  assert.strictEqual(L.parseEx('zancadas:3x6p').target, '6 por pierna');
+  assert.strictEqual(L.parseEx('plancha-lat:3x8l').target, '8 por lado');
+  assert.throws(() => L.parseEx('inexistente:3x8'));
+});
+t('usuario nuevo: la lección de hoy es la 1.1; completarla avanza a la 1.2', () => {
+  const st = L.defaultState('2026-10-05');
+  assert.strictEqual(L.nextLesson(st).id, '1.1');
+  assert.deepStrictEqual(L.todayPlan(st), { type: 'P', lesson: '1.1' });
+  st.sessions['2026-10-05'] = lessonSession('1.1');
+  assert.strictEqual(L.nextLesson(st).id, '1.2');
+});
+t('una sesión parcial o en modo mínimo cuenta para la racha pero NO avanza el trayecto', () => {
+  const st = L.defaultState('2026-10-05');
+  st.sessions['2026-10-05'] = lessonSession('1.1', { partial: true });
+  st.sessions['2026-10-06'] = { type: 'A', minimal: true, ex: {} };
+  assert.strictEqual(L.nextLesson(st).id, '1.1');
+  assert.strictEqual(L.streakInfo(st, '2026-10-06').streak, 2);
+});
+t('al terminar las 23 lecciones el plan pasa a la rutina A/B; con el trayecto apagado, también', () => {
+  const st = L.defaultState('2026-01-01');
+  L.LESSONS.forEach((l, i) => { st.sessions[L.addDays('2026-01-01', i)] = lessonSession(l.id); });
+  assert.strictEqual(L.nextLesson(st), null);
+  assert.ok(['A', 'B'].includes(L.todayPlan(st).type));
+  const st2 = L.defaultState('2026-10-05'); st2.settings.path = false;
+  assert.strictEqual(L.todayPlan(st2).lesson, undefined);
+});
+t('routineFor devuelve lección, rutina A/B o modo mínimo; las lecciones se guardan con reps contadas en el gráfico', () => {
+  assert.strictEqual(L.routineFor({ lesson: '2.3' }).id, '2.3');
+  assert.strictEqual(L.routineFor({ type: 'B' }), L.ROUTINES.B);
+  assert.strictEqual(L.routineFor({ minimal: true, lesson: '2.3' }), L.MINIMAL);
+  assert.strictEqual(L.sessionReps({ ex: { 'plancha-rod': [20, 20], 'flex-rod': [6, 6] } }), 12);   // segundos no suman
+});
+
 console.log(`\n${passed} pruebas OK`);
